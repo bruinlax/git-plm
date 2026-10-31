@@ -1,0 +1,133 @@
+{
+  "schema": 1,
+  "project": "camper-ipad-dock",
+  "source": {
+    "instance": "plm (sample)",
+    "db": "data/db/plm.sqlite3",
+    "git_mode": "write",
+    "exported_at": "2026-10-21T20:43:05Z"
+  },
+  "items": [
+    {
+      "number": "CID-ASM-0001",
+      "kind": "assembly",
+      "carry": "repo"
+    },
+    {
+      "number": "CID-PRT-0001",
+      "kind": "part",
+      "carry": "repo"
+    },
+    {
+      "number": "CID-PRT-0002",
+      "kind": "part",
+      "carry": "repo"
+    },
+    {
+      "number": "CID-PRT-0003",
+      "kind": "part",
+      "carry": "repo"
+    },
+    {
+      "number": "CID-PRT-0004",
+      "kind": "part",
+      "carry": "repo"
+    },
+    {
+      "number": "CID-CPN-0001",
+      "kind": "coupon",
+      "carry": "repo"
+    }
+  ],
+  "counts": {
+    "items": 6,
+    "revisions": 11,
+    "files": 95,
+    "bom": 8,
+    "attributes": 30,
+    "tags": 35,
+    "relations": 2,
+    "changes": 2,
+    "proposals": 11,
+    "approvals": 5,
+    "reviews": 4,
+    "change_reviews": 1,
+    "checks": 450,
+    "context": 77,
+    "events": 204
+  },
+  "external": {
+    "1": {
+      "number": "CCR-AST-0001",
+      "kind": "asset",
+      "project": "camper-conduit-rack",
+      "name": "Four Wheel Camper Hawk flatbed on Norweld tray",
+      "versions": []
+    }
+  },
+  "left_behind": [],
+  "files": {
+    "vault_on_disk": 0,
+    "vault_history_only": 0,
+    "objects": 16,
+    "not_found": [],
+    "sha256_mismatch": []
+  },
+  "repos": {
+    "CID-ASM-0001": {
+      "head": "refs/heads/main",
+      "refs": 7,
+      "config": {
+        "plm.number": "CID-ASM-0001",
+        "plm.kind": "assembly"
+      },
+      "lfs_pointers": 8
+    },
+    "CID-PRT-0001": {
+      "head": "refs/heads/main",
+      "refs": 9,
+      "config": {
+        "plm.number": "CID-PRT-0001",
+        "plm.kind": "part"
+      },
+      "lfs_pointers": 3
+    },
+    "CID-PRT-0002": {
+      "head": "refs/heads/main",
+      "refs": 7,
+      "config": {
+        "plm.number": "CID-PRT-0002",
+        "plm.kind": "part"
+      },
+      "lfs_pointers": 2
+    },
+    "CID-PRT-0003": {
+      "head": "refs/heads/main",
+      "refs": 7,
+      "config": {
+        "plm.number": "CID-PRT-0003",
+        "plm.kind": "part"
+      },
+      "lfs_pointers": 2
+    },
+    "CID-PRT-0004": {
+      "head": "refs/heads/draft/v0.1.0",
+      "refs": 3,
+      "config": {
+        "plm.number": "CID-PRT-0004",
+        "plm.kind": "part"
+      },
+      "lfs_pointers": 0
+    },
+    "CID-CPN-0001": {
+      "head": "refs/heads/draft/v0.1.0",
+      "refs": 3,
+      "config": {
+        "plm.number": "CID-CPN-0001",
+        "plm.kind": "coupon"
+      },
+      "lfs_pointers": 1
+    }
+  },
+  "bytes": 24768626
+}

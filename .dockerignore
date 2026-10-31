@@ -1,0 +1,35 @@
+# Build context = what gets shipped to the docker daemon. This tree lives on a
+# network-synced volume, every byte here is read over the network — a stray
+# .venv/ can make image builds take ~20 MINUTES instead of 30 SECONDS. Keep
+# this file honest even when the repo is small today: a venv or node_modules
+# appears the first time somebody runs a tool.
+.git
+.gitignore
+.venv
+venv
+env
+node_modules
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+.env
+.env.*
+!.env.example
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.log
+.DS_Store
+
+# plm state (the stock compose keeps everything there)
+data/
+
+# not needed inside the image (the sample is loaded from the host, the
+# screenshots are for the README)
+examples/
+docs/images/

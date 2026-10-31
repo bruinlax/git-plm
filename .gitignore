@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Secrets and live config never enter git. Keep your real .env in the deploy
+# folder (mode 600) with a recovery copy somewhere safe. See DEPLOY.md.
+.env
+.env.*
+!.env.example
+CREDENTIALS*
+*.key
+*.pem
+*.secret*
+
+# The patterns above cover `.env*`, `*.key`, `*.pem` and `*.secret*` — and NOT
+# the exact filenames plm uses for its tokens, so a copy of either into the
+# worktree would have committed cleanly.
+secrets/
+push-tokens
+index-token
+filedrop-token
+*-token
+*.token
+
+# The stock docker-compose.yml keeps ALL of plm's state here (DEPLOY.md).
+/data/

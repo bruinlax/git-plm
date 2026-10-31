@@ -1,0 +1,16 @@
+# gitleaks runs before every push (DEPLOY.md). The sample project's rows carry
+# Git LFS content hashes as `"key": "<sha256>"` (plm's files table: key = the
+# object's sha256); gitleaks' generic-api-key rule reads them as secrets.
+[extend]
+useDefault = true
+
+[allowlist]
+condition = "AND"
+description = "examples: LFS object keys are sha256 content hashes, not credentials"
+paths = ['''examples/.*/rows\.json$''']
+regexTarget = "line"
+regexes = [
+  '''"key": "[0-9a-f]{64}"''',
+  # a plm file key that is a part filename (NUMBER_vX.Y.Z_name.stl), not a credential
+  '''"key": "[A-Z]{2,4}-[A-Z]{3}-[0-9]{4}_v[0-9]''',
+]

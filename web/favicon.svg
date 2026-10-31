@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- plm — the drawing office, at 32px: a title-block corner with the stamp. -->
+  <rect width="32" height="32" rx="3" fill="#F4F5F2"/>
+  <rect x="1.5" y="1.5" width="29" height="29" rx="2" fill="none" stroke="#171A1E" stroke-width="1.6"/>
+  <line x1="1.5" y1="22.5" x2="30.5" y2="22.5" stroke="#B9BEB2" stroke-width="1"/>
+  <line x1="22.5" y1="22.5" x2="22.5" y2="30.5" stroke="#B9BEB2" stroke-width="1"/>
+  <text x="16" y="16.5" text-anchor="middle" font-family="ui-monospace,Menlo,Consolas,monospace"
+        font-size="11.5" font-weight="700" fill="#1F47AE" letter-spacing="0">plm</text>
+  <text x="26.4" y="28.6" text-anchor="middle" font-family="ui-monospace,Menlo,Consolas,monospace"
+        font-size="5.4" font-weight="700" fill="#9A6200">✓</text>
+</svg>

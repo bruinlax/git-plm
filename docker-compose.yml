@@ -1,0 +1,201 @@
+# plm — run it anywhere. Nothing is needed before this, on any machine with
+# Docker: no account, no hostname, no other service.
+#
+#   docker compose up -d --build
+#   open http://localhost:8097
+#
+# DEPLOY.md § "Run it anywhere" is the walk-through. Four services, ONE image
+# (the repo-root Dockerfile):
+#   init      one-shot, first: makes ./data and seeds the secrets (plm/firstrun.py)
+#   plm       the API + web UI                         :8097
+#   plm-mcp   the MCP server for agents (/mcp)         :8098
+#   plm-git   git smart HTTP: clone a part, push = a proposal   :8092
+#
+# Everything plm keeps is under ./data (gitignored):
+#   data/db        the SQLite registry (WAL mode) — LOCAL disk, never a network share
+#   data/repos     one bare git repo per item — the design history
+#   data/lfs       Git LFS objects (meshes), content-addressed
+#   data/evidence  release evidence bundles
+#   data/cache     derived (thumbnails, upload inbox, render cache) — safe to delete
+#   data/secrets   push-tokens (your token is the first line) + index-token
+# Backups are bring-your-own: back up ./data (DEPLOY.md § Backups).
+#
+# Every value below has a working default; a .env (copy sample.env) only
+# overrides. On Linux, if `id -u` is not 1000, put PLM_UID/PLM_GID in .env so
+# the files under ./data are yours.
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "3"}
+
+x-app: &app
+  image: ${PLM_IMAGE:-plm-selfhost:latest}
+  build:
+    context: .
+    args:
+      PLM_COMMIT: ${PLM_COMMIT:-unknown}
+  restart: unless-stopped
+  logging: *logging
+  # The uid that owns ./data (the init service makes it so), so the files plm
+  # writes are yours. Set PLM_UID/PLM_GID in .env when `id -u` is not 1000.
+  user: "${PLM_UID:-1000}:${PLM_GID:-1000}"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp:size=512m,mode=1777"]
+  volumes:
+    - ./data/db:/var/plm/db
+    - ./data/repos:/var/plm/repos
+    - ./data/lfs:/var/plm/lfs
+    - ./data/evidence:/var/plm/evidence
+    - ./data/cache:/var/cache/plm
+    - ./data/secrets:/run/secrets:ro
+
+# ONE block for every service: the three doors into the same repositories must
+# agree about the repos root, the token file and the public addresses.
+x-plm-env: &plm-env
+  HOME: /tmp
+  PLM_DB: /var/plm/db/plm.sqlite3
+  PLM_REPOS: /var/plm/repos
+  PLM_LFS_ROOT: /var/plm/lfs
+  PLM_EVIDENCE_DIR: /var/plm/evidence
+  PLM_CACHE_DIR: /var/cache/plm
+  # Where HUMANS and AGENTS reach this instance — every link plm hands out is
+  # built on these. Change them when you put plm behind a hostname/proxy.
+  PLM_PUBLIC_URL: ${PLM_PUBLIC_URL:-http://localhost:${PLM_PORT:-8097}}
+  PLM_WEB_BASE: ${PLM_PUBLIC_URL:-http://localhost:${PLM_PORT:-8097}}
+  PLM_GIT_CLONE_BASE: ${PLM_GIT_CLONE_BASE:-http://localhost:${PLM_GIT_PORT:-8092}/git}
+  # git-first for every project: a design write is a commit, `git push` is a
+  # proposal a human approves. (off | read | write; per project with
+  # `python -m plm.gitmode`.)
+  PLM_GIT_MODE: ${PLM_GIT_MODE:-write}
+  # New binary bytes go to plm's own LFS store.
+  PLM_BLOBSTORE_DEFAULT: lfs
+  PLM_LFS_THRESHOLD_BYTES: ${PLM_LFS_THRESHOLD_BYTES:-1048576}
+  # Only for an instance that routes agents to ANOTHER, git-first instance.
+  PLM_GITFIRST_INSTANCE_URL: ${PLM_GITFIRST_INSTANCE_URL:-}
+  # AUTH. `trusted-network` (default): the network is the boundary — reads and
+  # writes need no login, a bearer token (data/secrets/push-tokens) says WHO.
+  # Fine on 127.0.0.1 or a private network. Anything reachable by strangers:
+  # set PLM_AUTH_MODE=required and configure OIDC (OIDC_ISSUER, OIDC_CLIENT_ID,
+  # data/secrets/oidc-client-secret) — DEPLOY.md § Auth modes.
+  PLM_AUTH_MODE: ${PLM_AUTH_MODE:-trusted-network}
+  # The first admin: a human with the approver role, seeded on first start;
+  # the init service gives the first token this name.
+  PLM_ADMIN: ${PLM_ADMIN:-admin}
+  PLM_TOKENS_FILE: /run/secrets/push-tokens
+  PLM_GIT_INDEX_TOKEN_FILE: /run/secrets/index-token
+  OIDC_ISSUER: ${OIDC_ISSUER:-}
+  OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+  OIDC_CLIENT_SECRET_FILE: ${OIDC_CLIENT_SECRET_FILE:-}   # /run/secrets/oidc-client-secret when you use OIDC
+  OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-}
+  OIDC_ACCESS_GROUP: ${OIDC_ACCESS_GROUP:-plm-users,admins}
+  # Integrations (a click that POSTs somewhere): which hosts they may reach.
+  PLM_ACTIONS_ALLOW_HOSTS: ${PLM_ACTIONS_ALLOW_HOSTS:-}
+  # What agents are told to do with a bug or a missing capability.
+  PLM_ISSUES_ADVICE: ${PLM_ISSUES_ADVICE:-}
+
+services:
+  # First, once per `up`, and gone when it has run: ./data's folders, owned by
+  # the uid above, and the two secrets if they do not exist (plm/firstrun.py).
+  # The only container that runs as root, so it can hand ./data to you; no
+  # network, nothing else.
+  init:
+    image: ${PLM_IMAGE:-plm-selfhost:latest}
+    build:
+      context: .
+      args:
+        PLM_COMMIT: ${PLM_COMMIT:-unknown}
+    user: "0:0"
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE, DAC_READ_SEARCH]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+    logging: *logging
+    environment:
+      PLM_UID: ${PLM_UID:-1000}
+      PLM_GID: ${PLM_GID:-1000}
+      PLM_ADMIN: ${PLM_ADMIN:-admin}
+    volumes:
+      - ./data:/data
+    command: ["python", "-m", "plm.firstrun"]
+
+  plm:
+    <<: *app
+    environment:
+      <<: *plm-env
+    depends_on:
+      init: {condition: service_completed_successfully}
+    ports:
+      - "${PLM_BIND:-127.0.0.1}:${PLM_PORT:-8097}:8097"
+    command: ["uvicorn", "plm.api:app", "--host", "0.0.0.0", "--port", "8097"]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8097/api/stats',timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  plm-mcp:
+    <<: *app
+    environment:
+      <<: *plm-env
+      PORT: "8098"
+      # an MCP write's checks are recorded and run by plm's own runner
+      PLM_CHECKS: relay
+    ports:
+      - "${PLM_BIND:-127.0.0.1}:${PLM_MCP_PORT:-8098}:8098"
+    command: ["python", "-m", "plm_mcp.server"]
+    depends_on:
+      init: {condition: service_completed_successfully}
+      plm: {condition: service_started}
+
+  # git smart HTTP over the repos plm reads, and the push door. Never opens the
+  # DB: a push is validated here and indexed by plm (POST /api/git/index).
+  plm-git:
+    <<: *app
+    environment:
+      <<: *plm-env
+      PYTHONPATH: /app/plm-git
+      PLMGIT_DIRECT_ROOT: /var/plm/repos
+      PLMGIT_PORT: "8092"
+      PLMGIT_BIND: 0.0.0.0
+      PLMGIT_CACHE: /tmp/plm-git
+      PLMGIT_ALLOW_PUSH: "0"            # the legacy vault push path: off
+      PLMGIT_GITFIRST_ALLOW_PUSH: "1"   # git-first: a push is a proposal
+      PLMGIT_GITFIRST_PLM_URL: http://plm:8097
+      PLMGIT_PUSH_TOKENS_FILE: /run/secrets/push-tokens
+      PLMGIT_GITFIRST_INDEX_TOKEN_FILE: /run/secrets/index-token
+      PLMGIT_GITFIRST_DRAFT_PREFIX: draft
+      PLMGIT_PUSH_REF: refs/for/main
+      PLMGIT_PUSH_TARGET_STATE: PROTOTYPE
+      PLMGIT_PUSH_PLM_PUBLIC_URL: ${PLM_PUBLIC_URL:-http://localhost:${PLM_PORT:-8097}}
+      PLM_CHECKS: "0"
+      PLM_GITSYNC: "0"
+      # git hardening for a server: fsck everything, cap a push, no ext:: etc.
+      GIT_CONFIG_COUNT: "8"
+      GIT_CONFIG_KEY_0: uploadpack.allowFilter
+      GIT_CONFIG_VALUE_0: "true"
+      GIT_CONFIG_KEY_1: uploadpack.allowAnySHA1InWant
+      GIT_CONFIG_VALUE_1: "true"
+      GIT_CONFIG_KEY_2: receive.fsckObjects
+      GIT_CONFIG_VALUE_2: "true"
+      GIT_CONFIG_KEY_3: transfer.fsckObjects
+      GIT_CONFIG_VALUE_3: "true"
+      GIT_CONFIG_KEY_4: fetch.fsckObjects
+      GIT_CONFIG_VALUE_4: "true"
+      GIT_CONFIG_KEY_5: receive.maxInputSize
+      GIT_CONFIG_VALUE_5: "167772160"
+      GIT_CONFIG_KEY_6: protocol.allow
+      GIT_CONFIG_VALUE_6: "never"
+      # keep-refs are not advertised (their objects stay fetchable by sha)
+      GIT_CONFIG_KEY_7: transfer.hideRefs
+      GIT_CONFIG_VALUE_7: refs/plm/keep
+    ports:
+      - "${PLM_BIND:-127.0.0.1}:${PLM_GIT_PORT:-8092}:8092"
+    command: ["python3", "-m", "plm_git.server"]
+    depends_on:
+      init: {condition: service_completed_successfully}
+      plm: {condition: service_started}

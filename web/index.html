@@ -1,0 +1,1754 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>plm — part registry</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<style>
+/* ============================================================
+   plm — the drawing office.
+
+   Visual thesis: an engineering document register, not a dashboard.
+   Paper ground, hairline rules, every piece of data in monospace,
+   lifecycle as rubber stamps, and the item header set as a drawing
+   title block. Color is reserved for two things only: the cyanotype
+   blue of interaction, and the stamp ink of lifecycle state.
+   ============================================================ */
+:root {
+  --paper:  #F4F5F2;   /* the desk */
+  --sheet:  #FFFFFF;   /* the document */
+  --ink:    #171A1E;
+  --ink-2:  #575D66;
+  --ink-3:  #8D939B;
+  --rule:   #DBDED6;   /* hairlines */
+  --rule-2: #B9BEB2;   /* frame lines */
+  --blue:   #1F47AE;   /* cyanotype: links, focus, selection */
+  --blue-bg:#EDF1FB;
+
+  --st-draft:      #5A6069; --st-draft-bg:      #EFF1EE;
+  --st-prototype:  #9A6200; --st-prototype-bg:  #FBF2DE;
+  --st-released:   #166A2E; --st-released-bg:   #E7F3EA;
+  --st-superseded: #6D28A8; --st-superseded-bg: #F3ECFA;
+  --st-obsolete:   #AC2318; --st-obsolete-bg:   #FBE9E7;
+
+  /* ⭐ SIDES AND CHANGES — the one colour convention of every diff
+     (docs/PLM_REVIEW_MODEL.md §2.9 "Sides and colours"). Two questions, two
+     pairs of colours, never mixed:
+       WHICH REVISION is this?   --plm-old (the old side: base / what it was)
+                                 --plm-new (the new side: head / what it is)
+       WHAT HAPPENED to it?      --plm-removed (volume, lines, pixels gone)
+                                 --plm-added   (volume, lines, pixels new)
+     The side hues are deliberately NOT red/green, so "old" never reads as
+     "deleted". The 3-D overlay reads these values at runtime
+     (PLM_DIFF.tok); nothing in JS carries its own copy. The page has no dark
+     mode; the dark 3-D room uses the same four values. */
+  --plm-old:     #3E6FB0;   /* steel blue */
+  --plm-new:     #CC7A12;   /* amber */
+  --plm-removed: #CF222E;   /* GitHub's red */
+  --plm-added:   #1A7F37;   /* GitHub's green */
+  --plm-old-bg:  #EBF1F9;   /* side washes, for a column or a header */
+  --plm-new-bg:  #FBF1E2;
+  --plm-removed-ink: #8A1C13;   /* text ON a removed/added wash */
+  --plm-added-ink:   #0F5124;
+  --plm-old-on-dark: #7FA6DA;   /* the same two sides on the 3-D room's dark panel */
+  --plm-new-on-dark: #E9A54A;
+
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin:0; min-height:100%; }
+body { background:var(--paper); color:var(--ink); font:14px/1.5 var(--ui); }
+a { color:var(--blue); text-decoration:none; }
+a:hover { text-decoration:underline; }
+button, input, select { font:inherit; color:inherit; }
+:focus-visible { outline:2px solid var(--blue); outline-offset:1px; }
+@media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+
+/* micro-label: names a field or a group, always uppercase, never decorative */
+.lbl { font:600 10px/1.2 var(--ui); letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); }
+
+/* ================= masthead ================= */
+#mast {
+  background:var(--sheet); border-bottom:1px solid var(--rule-2);
+  display:flex; align-items:baseline; gap:18px; padding:14px 26px 12px;
+}
+#mast .title { font:650 16px/1 var(--ui); letter-spacing:.01em; white-space:nowrap; }
+#mast .title a { color:var(--ink); }
+#mast .title .reg { color:var(--ink-3); font-weight:400; }
+#mast .stats { font:11px var(--mono); color:var(--ink-2); }
+#mast .spacer { flex:1; }
+#mast .api { font:11px var(--mono); color:var(--ink-3); }
+#mastNav { display:flex; gap:2px; }
+#mastNav a { padding:3px 10px; border-radius:3px; font-size:12.5px; color:var(--ink-2); white-space:nowrap; }
+#mastNav a:hover { text-decoration:none; background:var(--paper); }
+#mastNav a.on { background:var(--ink); color:var(--sheet); }
+/* Pending-approval count: the human gate, visible from every page. */
+#mastNav a .badge {
+  display:inline-block; margin-left:6px; padding:0 5px; border-radius:8px;
+  font:600 10.5px/15px var(--mono); background:var(--stamp-review, #8a5a12);
+  color:#fff; vertical-align:1px;
+}
+#mastNav a.on .badge { background:var(--sheet); color:var(--ink); }
+#mast .who { font:11px var(--mono); color:var(--ink-3); margin-right:10px; }
+#mast .who b { color:var(--ink-2); font-weight:600; }
+#mast .who a { color:var(--ink-2); text-decoration:underline; }
+#gq {
+  width:250px; background:var(--paper); border:1px solid var(--rule-2);
+  border-radius:3px; padding:4px 9px; font:12px var(--mono);
+}
+#gq::placeholder { color:var(--ink-3); font-family:var(--ui); }
+/* The masthead is a single non-wrapping row, which on a phone is what makes the
+   WHOLE APP scroll sideways — every page, whatever is in it. Let it wrap. */
+@media (max-width: 760px) {
+  #mast { flex-wrap:wrap; gap:10px 14px; padding:12px 16px; }
+  #mast .spacer { display:none; }
+  #gq { width:100%; order:9; }
+}
+#instanceBadge {
+  font:700 10px/1 var(--mono); letter-spacing:.1em; padding:4px 8px;
+  border:1.5px solid var(--st-prototype); color:var(--st-prototype);
+  background:var(--st-prototype-bg); border-radius:2px; transform:rotate(-2deg);
+}
+
+/* ---- search results ---- */
+.hit { padding:9px 12px; border-bottom:1px solid var(--rule); cursor:pointer; }
+.hit:last-child { border-bottom:none; }
+.hit:hover { background:var(--blue-bg); }
+.hit .top { display:flex; gap:10px; align-items:baseline; }
+.hit .snip { font-size:12.5px; color:var(--ink-2); margin-top:3px; }
+.hit .snip mark { background:#FFF0B3; color:var(--ink); padding:0 1px; }
+
+/* ---- context entries ---- */
+/* A timestamp is two lines: the absolute local time, and the relative form under
+   it. Both are shown because they answer different questions — one you quote in a
+   ticket, the other you read at a glance. The relative line is quieter so the
+   pair reads as one thing rather than two competing facts. */
+.when { display:inline-flex; flex-direction:column; line-height:1.32;
+        vertical-align:top; }
+.when .rel { color:var(--ink-3); opacity:.82; font-size:.88em;
+             font-variant-numeric:tabular-nums; }
+/* Inside a flex `.meta` row the column must not be stretched by its siblings. */
+.meta .when { align-self:flex-start; }
+
+.feedmore { display:block; width:calc(100% - 24px); margin:8px 12px 12px;
+             text-align:center; }
+
+.ctx { padding:9px 12px; border-bottom:1px solid var(--rule); }
+.ctx:last-child { border-bottom:none; }
+.ctx .meta { font:10.5px var(--mono); color:var(--ink-3); margin-bottom:4px;
+             display:flex; gap:8px; }
+.ctx .body { font-size:12.5px; white-space:pre-wrap; word-break:break-word;
+             max-height:180px; overflow-y:auto; }
+.ctxadd { padding:10px 12px; border-top:1px solid var(--rule-2); }
+.ctxadd textarea {
+  width:100%; min-height:54px; background:var(--paper); border:1px solid var(--rule-2);
+  border-radius:3px; padding:6px 8px; font:12.5px var(--ui); resize:vertical;
+}
+
+/* ---- inline markdown documents (work instructions etc.) ---- */
+.mddoc { padding:12px 14px; font-size:13px; line-height:1.55; max-height:520px; overflow-y:auto; }
+.mddoc h1, .mddoc h2, .mddoc h3 { font-size:13.5px; margin:14px 0 6px; }
+.mddoc h1:first-child, .mddoc h2:first-child { margin-top:0; }
+.mddoc h1 { border-bottom:1px solid var(--rule); padding-bottom:5px; }
+.mddoc ul, .mddoc ol { margin:6px 0; padding-left:22px; }
+.mddoc li { margin:3px 0; }
+.mddoc code { font:12px var(--mono); background:var(--paper); padding:0 4px;
+              border:1px solid var(--rule); border-radius:2px; }
+.mddoc pre { background:#FBFCFA; border:1px solid var(--rule); padding:8px 10px;
+             overflow-x:auto; font:12px/1.5 var(--mono); }
+.mddoc p { margin:6px 0; }
+.mddoc table.mdtable { border-collapse:collapse; margin:8px 0; font-size:12.5px; }
+.mddoc table.mdtable th, .mddoc table.mdtable td { border:1px solid var(--rule); padding:3px 8px; text-align:left; vertical-align:top; }
+
+/* ---- BOM line thumbnails ---- */
+td.bomthumb { width:52px; padding:4px 0 4px 12px !important; }
+td.bomthumb img, td.bomthumb .nothumb {
+  width:44px; height:32px; object-fit:cover; display:block;
+  background:var(--paper); border:1px solid var(--rule); border-radius:2px;
+}
+td.bomthumb .nothumb { display:grid; place-items:center;
+  font:8px var(--mono); color:var(--ink-3); letter-spacing:.06em; }
+.btn.tiny { padding:1px 7px; font-size:11px; }
+.caret2 { display:inline-block; width:22px; color:var(--ink-2); font-size:15px;
+          line-height:1; vertical-align:-1px; user-select:none; text-align:center; }
+.caret2:not(:empty) { cursor:default; }
+.matline { padding:6px 12px; font:12px var(--mono); color:var(--ink-2);
+           border-bottom:1px solid var(--rule); }
+.matline b { color:var(--ink); font-weight:600; }
+.matline .warn { color:var(--st-prototype); }
+table.led tr.sup td { color:var(--ink-3); }
+table.led tr.sup td.bomthumb img { opacity:.4; }
+td.strike { text-decoration:line-through; }
+
+/* ---- project cards (one per project; top items listed inside) ---- */
+#products { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr));
+            gap:14px; margin:0 0 20px; }
+.prod .info .tops { margin:6px 0 0; border-top:1px solid var(--rule); }
+.prod .toprow { display:grid; grid-template-columns:auto 1fr auto auto; gap:7px;
+                align-items:center; padding:5px 0; border-bottom:1px solid var(--rule);
+                font-size:12px; }
+.prod .toprow:last-child { border-bottom:none; }
+.prod .toprow.on .num { font-weight:700; }
+.prod .toprow .nm { color:var(--ink-2); overflow:hidden; text-overflow:ellipsis;
+                    white-space:nowrap; font-size:11.5px; }
+.prod .toprow .ver { font:11px var(--mono); color:var(--ink-2); }
+/* a thumbnail that is still rendering (see retryThumb in app.js) */
+.noimg.pending { animation:pulse 1.6s ease-in-out infinite; }
+.itemshot .noimg { display:block; padding:40px 12px; text-align:center;
+                   font:11px var(--mono); color:var(--ink-3); letter-spacing:.06em; }
+@keyframes pulse { 0%,100% { opacity:.45 } 50% { opacity:1 } }
+.prod { background:var(--sheet); border:1px solid var(--rule-2); cursor:pointer; }
+.prod:hover { border-color:var(--ink-3); }
+.prod .shot { height:140px; background:var(--paper); border-bottom:1px solid var(--rule);
+              display:grid; place-items:center; overflow:hidden; }
+.prod .shot img { width:100%; height:100%; object-fit:cover; display:block; }
+.prod .shot .noimg { font:10px var(--mono); color:var(--ink-3); letter-spacing:.08em; }
+.prod .info { padding:10px 12px 12px; }
+.prod .info .nm { font-weight:600; font-size:13.5px; margin:2px 0 6px; }
+.prod .info .counts { font:11.5px var(--mono); color:var(--ink-2); margin-top:6px; }
+
+/* ---- build plan ---- */
+.plan .ok { color:var(--st-released); font-family:var(--mono); font-size:11px; }
+.plan .missing { color:var(--st-obsolete); font-family:var(--mono); font-size:11px; }
+
+/* ---- dashboard feed ---- */
+.feedrow {
+  display:grid; grid-template-columns: 84px 170px 1fr auto; gap:14px;
+  align-items:center; padding:9px 12px; border-bottom:1px solid var(--rule);
+  cursor:pointer;
+}
+.feedrow:last-child { border-bottom:none; }
+.feedrow:hover { background:var(--blue-bg); }
+.feedrow .thumbbox {
+  width:84px; height:58px; background:var(--paper); border:1px solid var(--rule);
+  border-radius:2px; overflow:hidden; display:grid; place-items:center;
+}
+.feedrow .thumbbox img { width:100%; height:100%; object-fit:cover; display:block; }
+.feedrow .thumbbox .noimg { font:9px var(--mono); color:var(--ink-3); letter-spacing:.08em; }
+.feedrow .who { min-width:0; }
+.feedrow .who .num { display:block; }
+.feedrow .who .nm { font-size:12px; color:var(--ink-2); overflow:hidden;
+                    text-overflow:ellipsis; white-space:nowrap; display:block; }
+.feedrow .what { min-width:0; font-size:12.5px; overflow:hidden;
+                 text-overflow:ellipsis; white-space:nowrap; }
+.feedrow .meta { text-align:right; font:11.5px var(--mono); color:var(--ink-3);
+                 display:flex; flex-direction:column; gap:3px; align-items:flex-end; }
+
+/* ---- revision thumbnail on item page ---- */
+.revthumb {
+  float:right; width:150px; height:104px; margin:10px 12px 6px 12px;
+  background:var(--paper); border:1px solid var(--rule-2); border-radius:2px;
+  overflow:hidden; cursor:pointer; display:grid; place-items:center;
+}
+.revthumb img { width:100%; height:100%; object-fit:cover; display:block; }
+
+/* ---- toast ---- */
+#toast {
+  position:fixed; left:50%; bottom:26px; transform:translateX(-50%);
+  background:var(--ink); color:var(--sheet); font-size:12.5px;
+  padding:8px 16px; border-radius:4px; opacity:0; pointer-events:none;
+  transition:opacity .18s; z-index:60; max-width:70vw;
+}
+/* pointer-events:none keeps a hidden toast from blocking clicks on the page
+   underneath; it must come back ON while the toast shows, or the "view →" link
+   inside it is unclickable. */
+#toast.on { opacity:1; pointer-events:auto; }
+
+#page { max-width:1180px; margin:0 auto; padding:22px 26px 80px; }
+
+/* ================= registry ================= */
+#tools { display:flex; gap:10px; align-items:center; margin:0 0 14px; flex-wrap:wrap; }
+#q {
+  flex:1; min-width:220px; background:var(--sheet); border:1px solid var(--rule-2);
+  border-radius:3px; padding:7px 10px; font:13px var(--mono);
+}
+#q::placeholder { color:var(--ink-3); font-family:var(--ui); }
+.chip {
+  border:1px solid var(--rule-2); background:var(--sheet); border-radius:3px;
+  padding:5px 10px; cursor:pointer; font-size:12px; color:var(--ink-2);
+}
+.chip:hover { border-color:var(--ink-3); }
+.chip.on { background:var(--ink); border-color:var(--ink); color:var(--sheet); }
+
+table.reg { width:100%; border-collapse:collapse; background:var(--sheet);
+            border:1px solid var(--rule-2); }
+table.reg th {
+  text-align:left; font:600 10px/1.2 var(--ui); letter-spacing:.12em;
+  text-transform:uppercase; color:var(--ink-3); padding:8px 12px;
+  border-bottom:1px solid var(--rule-2); background:var(--sheet);
+  position:sticky; top:0;
+}
+table.reg td { padding:7px 12px; border-bottom:1px solid var(--rule);
+               font-size:13px; vertical-align:baseline; }
+table.reg tr:last-child td { border-bottom:none; }
+table.reg tbody tr { cursor:pointer; }
+table.reg tbody tr:hover td { background:var(--blue-bg); }
+td.num, .num { font:500 13px var(--mono); white-space:nowrap; }
+td.ver { font:13px var(--mono); }
+td.dim, .dim { color:var(--ink-3); }
+.kindchip { font:10px var(--mono); letter-spacing:.06em; color:var(--ink-2);
+            border:1px solid var(--rule-2); border-radius:2px; padding:1px 5px;
+            text-transform:uppercase; }
+
+/* rubber stamp */
+.stamp {
+  display:inline-block; font:700 10px/1 var(--mono); letter-spacing:.1em;
+  padding:3px 7px; border:1.5px solid; border-radius:2px; text-transform:uppercase;
+}
+.stamp.big { font-size:13px; padding:6px 12px; border-width:2px; transform:rotate(-3deg); }
+.st-DRAFT      { color:var(--st-draft);      background:var(--st-draft-bg); }
+.st-IN_REVIEW  { color:var(--blue);          background:var(--blue-bg); }
+.st-PROTOTYPE  { color:var(--st-prototype);  background:var(--st-prototype-bg); }
+.st-RELEASED   { color:var(--st-released);   background:var(--st-released-bg); }
+.st-SUPERSEDED { color:var(--st-superseded); background:var(--st-superseded-bg); }
+.st-OBSOLETE   { color:var(--st-obsolete);   background:var(--st-obsolete-bg); }
+
+/* ================= item page: the title block ================= */
+.crumbs { font:12px var(--mono); color:var(--ink-3); margin:0 0 12px; }
+.crumbs a { color:var(--ink-2); }
+
+#tblock {
+  display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; background:var(--sheet);
+  border:2px solid var(--ink); margin:0 0 20px;
+}
+#tblock .cell { padding:8px 12px 10px; border-right:1px solid var(--rule-2);
+                border-bottom:1px solid var(--rule-2); min-width:0; }
+#tblock .cell:nth-child(4n) { border-right:none; }
+#tblock .cell.wide { grid-column: span 2; }
+#tblock .cell .v { font:15px var(--mono); margin-top:3px; overflow:hidden;
+                   text-overflow:ellipsis; white-space:nowrap; }
+#tblock .cell .v.title { font:600 17px/1.25 var(--ui); white-space:normal; }
+#tblock .cell.stampcell { display:flex; align-items:center; justify-content:center; }
+/* Four title-block cells across a phone is 95px each, which truncates the item
+   number — the one thing on the page that must always be readable. */
+@media (max-width: 640px) {
+  #tblock { grid-template-columns:1fr 1fr; }
+  #tblock .cell:nth-child(4n) { border-right:1px solid var(--rule-2); }
+  #tblock .cell:nth-child(2n) { border-right:none; }
+  #tblock .cell.wide { grid-column:span 2; }
+  #tblock .cell .v { font-size:14px; }
+}
+
+.cols { display:grid; grid-template-columns: minmax(300px,5fr) minmax(340px,7fr); gap:20px; }
+@media (max-width: 900px) { .cols { grid-template-columns:1fr; } }
+/* The Part tab reverses the weighting: the geometry and the tree are the thing
+   you came for, the way a repo home gives the code the room and puts About in
+   a rail beside it. */
+.cols.repo { grid-template-columns: minmax(340px,8fr) minmax(260px,4fr); }
+@media (max-width: 900px) { .cols.repo { grid-template-columns:1fr; } }
+/* A grid child's automatic minimum is its MIN-CONTENT, so one 60-character
+   generated filename in the tree sets the column, the column sets the page,
+   and a phone gets a sideways scroll it can never reach the end of. */
+.cols > div { min-width:0; }
+
+.doc { background:var(--sheet); border:1px solid var(--rule-2); margin:0 0 20px; }
+.doc > h3 { margin:0; padding:9px 12px; font:600 10px/1.2 var(--ui);
+            letter-spacing:.12em; text-transform:uppercase; color:var(--ink-2);
+            border-bottom:1px solid var(--rule-2);
+            display:flex; align-items:center; gap:8px; }
+.doc > h3 .right { margin-left:auto; display:flex; gap:6px; align-items:center; }
+.doc .body { padding:4px 0; }
+.doc .pad { padding:10px 12px; }
+
+table.led { width:100%; border-collapse:collapse; }
+table.led td, table.led th { padding:6px 12px; border-bottom:1px solid var(--rule);
+  font-size:12.5px; text-align:left; vertical-align:baseline; }
+table.led th { font:600 10px/1.2 var(--ui); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--ink-3); }
+table.led tr:last-child td { border-bottom:none; }
+tr.rev { cursor:pointer; }
+tr.rev:hover td { background:var(--blue-bg); }
+tr.rev.on td { background:var(--blue-bg); box-shadow: inset 3px 0 0 var(--blue); }
+
+.btn {
+  background:var(--sheet); border:1px solid var(--rule-2); border-radius:3px;
+  padding:5px 11px; cursor:pointer; font-size:12px;
+}
+.btn:hover { border-color:var(--ink-3); }
+.btn.primary { background:var(--blue); border-color:var(--blue); color:#fff; font-weight:600; }
+.btn.primary:hover { background:#183a92; }
+/* A disabled action is disabled on hover too — e.g. View 3D on a revision the
+   server says has no geometry (`thumb: null`). */
+.btn:disabled { opacity:.45; cursor:not-allowed; }
+.btn:disabled:hover { border-color:var(--rule-2); }
+.btn.primary:disabled:hover { background:var(--blue); }
+select.btn { padding:4px 6px; font-family:var(--mono); font-size:12px; }
+
+/* Related items: one group per relation label (plm/relations.py). The label is
+   the registry's own wording — "verifies", "verified by", "derived from" — so
+   the card reads as a sentence about this item. */
+.relgroup + .relgroup { border-top:1px solid var(--rule-2); }
+.rellbl { font:600 10px/1.2 var(--ui); letter-spacing:.12em; text-transform:uppercase;
+          color:var(--ink-3); padding:9px 12px 3px; }
+
+/* A plain list of facts inside a card — the plm.toml card's file roles,
+   relations and routing. (The FILE rows themselves are `table.gtree.frows`
+   now: one builder, five surfaces.) */
+.filelist { list-style:none; margin:0; padding:0; }
+.filelist li { display:flex; gap:10px; align-items:baseline; padding:5px 12px;
+               border-bottom:1px solid var(--rule); font:12.5px var(--mono); }
+.filelist li:last-child { border-bottom:none; }
+.rolechip { font-size:10px; color:var(--ink-3); border:1px solid var(--rule-2);
+            border-radius:2px; padding:0 4px; cursor:pointer; }
+.rolechip:hover { border-color:var(--blue); color:var(--blue); }
+/* AN UNCONFIRMED ROLE MUST NOT LOOK LIKE A FACT. A dashed border and
+   a trailing ? say "plm guessed this" at a glance — the whole failure being
+   fixed is that a guess and a declaration were indistinguishable. */
+.rolechip.guess { border-style:dashed; color:var(--ink-3); opacity:.85; }
+/* ⋯ — THE ONE FILE MENU (plm/actions.py + web/app.js fileMenu). A row of loud
+   buttons fought the filenames, which are the thing you are actually reading;
+   a row of glyphs made you learn what ⎙ meant. One quiet ⋯ per row, and the
+   verbs are words inside it. */
+.fmenu { width:22px; height:20px; display:inline-grid; place-items:center;
+         font:15px/1 var(--ui); color:var(--ink-3); background:none;
+         border:1px solid transparent; border-radius:2px; cursor:pointer;
+         padding:0; }
+.fmenu:hover, .fmenu:focus-visible { color:var(--blue); border-color:var(--rule-2);
+         background:var(--sheet); outline:none; }
+.pop.actpop { width:min(300px, 84vw); padding:0; }
+.actpop .pophead { display:flex; flex-direction:column; gap:2px; padding:7px 12px;
+         border-bottom:1px solid var(--rule-2); }
+.actpop .pophead .nm { font:12px var(--mono); overflow:hidden;
+         text-overflow:ellipsis; white-space:nowrap; }
+.actpop .pophead .kd { font:10px var(--ui); letter-spacing:.06em;
+         text-transform:uppercase; color:var(--ink-3); }
+.actitem { display:block; width:100%; text-align:left; background:none;
+           border:0; padding:7px 12px; cursor:pointer; font:12.5px var(--ui);
+           color:var(--ink); }
+.actitem:hover:not(.off) { background:var(--blue-bg); }
+.actitem:focus-visible { outline:2px solid var(--blue); outline-offset:-2px; }
+.actitem .t { display:block; font:12.5px var(--ui); color:inherit;
+               letter-spacing:0; text-transform:none; }
+.actitem.danger .t { color:var(--st-obsolete, #b4552d); }
+/* ⭐ A DISABLED ITEM CARRIES ITS REASON IN THE DOM, not in a tooltip: nobody
+   hovers on a phone, and the reason ("this file has never been classified —
+   say what it is") is usually one click away from being the fix. */
+.actitem.off { cursor:default; }
+.actitem.off .t { color:var(--ink-3); }
+.actitem .why { display:block; margin-top:2px; font:10.5px/1.35 var(--ui);
+                color:var(--ink-3); white-space:normal; }
+.actsep { height:1px; background:var(--rule); margin:3px 0; }
+td.gtmenu { width:28px; text-align:right; padding:2px 8px 2px 0 !important; }
+/* The file tables: the Record tab's list and the repo tree are the same table
+   now, because they are the same rows. */
+/* ⭐ THE NAME IS WHAT GETS TRUNCATED, never the chips beside it: a row that cut
+   off its own `external` marker was hiding the one thing that row was FOR. The
+   flex lives on an inner box so the cell keeps the `max-width:0` trick that
+   stops one 60-character generated filename setting the table's width. */
+td.gtname > .nmrow { display:flex; align-items:center; gap:6px;
+                     min-width:0; width:100%; }
+td.gtname > .nmrow > * { flex:none; }
+td.gtname > .nmrow > a { flex:0 1 auto; min-width:0; overflow:hidden;
+                         text-overflow:ellipsis; white-space:nowrap; }
+table.gtree.frows td.gtname { width:auto; }
+/* The ⋯ never gets squeezed off the end of a diff row: the chips give way
+   before the control does (measured at 430 px on a renamed mesh, where the
+   role + primary + kind chips together are wider than the name). */
+.dfhead .fmwrap { margin-left:auto; flex:none; }
+.dfhead .rolechip, .dfhead .kindchip { min-width:0; overflow:hidden;
+                                       text-overflow:ellipsis; }
+.dfmodes { padding:8px 12px 0; }
+/* Two rendered markdown files, side by side (WIDGETS.rendered2up). */
+.md2up { display:grid; grid-template-columns:1fr 1fr; gap:1px;
+         background:var(--rule-2); }
+.md2col { background:var(--sheet); padding:8px 12px; min-width:0; }
+.md2col .lbl { font:10px var(--ui); letter-spacing:.08em; text-transform:uppercase;
+               color:var(--ink-3); margin-bottom:6px; }
+.md2col.base { box-shadow:inset 3px 0 0 var(--plm-old); }
+.md2col.head { box-shadow:inset 3px 0 0 var(--plm-new); }
+@media (max-width: 700px) { .md2up { grid-template-columns:1fr; } }
+/* plm.toml's semantic diff: the header says which revision, the lifecycle
+   fields fold away. */
+.rlhead { display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+          padding:9px 12px; border-bottom:1px solid var(--rule); }
+.rlhead .v { font:13px var(--mono); }
+.rlhead .v.now { font-weight:700; }
+.rlsum { padding:6px 12px 10px; font-size:12.5px; line-height:1.45; }
+.rlsum .was { display:block; color:var(--ink-3); text-decoration:line-through; }
+.rlsum .now { display:block; }
+details.lifecycle { border-top:1px solid var(--rule); margin-top:6px; }
+details.lifecycle > summary { cursor:pointer; padding:7px 12px; font:11px var(--ui);
+          color:var(--ink-3); letter-spacing:.04em; }
+details.lifecycle > summary:hover { color:var(--ink-2); }
+#lbbody .lbpdf { width:100%; height:100%; border:0; background:var(--paper); }
+/* The modal the ambiguous-artifact refusal opens. */
+.modal-back { position:fixed; inset:0; background:rgb(0 0 0 / .45); z-index:60;
+              display:flex; align-items:center; justify-content:center; }
+.modal { width:min(520px,92vw); background:var(--sheet); border:1px solid var(--rule-2);
+         box-shadow:0 12px 45px rgb(0 0 0 / .4); padding:16px; }
+.modal h3 { margin:0 0 6px; }
+.btn.wide { display:block; width:100%; text-align:left; margin:4px 0; }
+.rolechip.guess::after { content:'?'; margin-left:2px; opacity:.7; }
+.rolechip.legacy { text-decoration:underline dotted; }
+.rolewarn { font-size:10px; color:var(--st-obsolete, #b4552d); cursor:help; }
+
+/* The declare-a-role picker: candidates first, so the common choice is short. */
+.rolepick { flex-basis:100%; margin:6px 0 2px; padding:8px; border:1px solid
+            var(--rule-2); background:#FBFCFA; border-radius:2px; }
+.rolepickh { font-size:11px; color:var(--ink-3); margin-bottom:6px; }
+.rolebtn { font-size:11px; margin:0 4px 4px 0; padding:2px 7px;
+           border:1px solid var(--rule-2); background:#fff; border-radius:2px;
+           cursor:pointer; }
+.rolebtn:hover { border-color:var(--blue); color:var(--blue); }
+/* `likely` = the server says these bytes could plausibly be this. */
+.rolebtn.likely { border-color:var(--blue); font-weight:600; }
+.rolebtn.current { background:var(--rule-2); }
+.rolebtn.cancel { color:var(--ink-3); }
+
+/* Tags. A caveat is an UNRESOLVED RISK and is styled to be noticed. */
+.tagrow { display:flex; flex-wrap:wrap; gap:4px; margin:2px 0 8px; }
+.tagchip { font-size:11px; padding:1px 7px; border-radius:9px;
+           border:1px solid var(--rule-2); color:var(--ink-2); cursor:help; }
+.tagchip.caveat { border-color:#c98a3c; background:#FDF6EC; color:#8a5a12;
+                  font-weight:600; }
+.tagchip.unreg { border-style:dashed; }
+.taglbl { font-size:10px; letter-spacing:.06em; text-transform:uppercase;
+          color:var(--ink-3); margin:4px 0 2px; }
+.cavcount { float:right; font-size:10px; font-weight:600; color:#8a5a12;
+            border:1px solid #c98a3c; background:#FDF6EC; border-radius:2px;
+            padding:0 5px; }
+.cavnote { font-size:11px; color:#8a5a12; margin:0 0 6px; }
+
+pre.diff { margin:0; padding:12px; font:12px/1.5 var(--mono); overflow:auto;
+           max-height:460px; background:#FBFCFA; }
+pre.diff .add { color:var(--plm-added); }
+pre.diff .del { color:var(--plm-removed); }
+pre.diff .hunk { color:var(--blue); }
+
+.empty { padding:14px 12px; color:var(--ink-3); font-size:12.5px; }
+.note { font-size:12px; color:var(--ink-2); }
+
+/* Item page: the selected revision's render, above the ledger. */
+.itemshot { padding:10px; }
+.itemshot img { display:block; width:100%; border-radius:3px; cursor:zoom-in;
+                background:#FBFCFA; }
+/* On the Part tab the render is the hero, but a repo home shows you the tree
+   without scrolling. Cap it: the full-size picture is one click away in the
+   lightbox and the whole thing is in the 3-D viewer. */
+.cols.repo .itemshot img { max-height:330px; object-fit:contain; }
+.itemshot .shotbar { display:flex; align-items:center; justify-content:space-between;
+                     gap:8px; margin-top:8px; }
+
+/* ================= viewer overlay (dark room in a box) =================
+ * The viewer was a routed state (the retired #/item/N/view/V; today only a
+ * snippet, /snip/<token>, routes to it) presented as a contained
+ * panel over the page — the backdrop and Close (and the browser back button)
+ * all leave through the router. */
+#viewer { position:fixed; inset:0; background:rgba(18,21,22,.48); z-index:40;
+          display:none; backdrop-filter:blur(2px); }
+#viewer.on { display:block; }
+#vbox { position:absolute; inset:3vh 3vw; background:#101314;
+        border:1px solid #2c3437; border-radius:10px; overflow:hidden;
+        box-shadow:0 30px 90px rgba(0,0,0,.55);
+        display:grid; grid-template-columns: 1fr 300px; }
+#vcanvas { position:relative; min-width:0; overflow:hidden; }
+/* THE CANVAS MUST NEVER DRIVE ITS OWN CONTAINER'S SIZE.
+   Its size is derived FROM the container (vResize reads clientWidth/Height), so
+   if it also participates in layout the two form a feedback loop: canvas grows
+   -> cell grows -> ResizeObserver fires -> canvas grows. That is measured, not
+   theoretical — a 1013px box ran away to 16208px on a HiDPI display. Taking the
+   canvas out of flow with absolute inset:0 makes the loop structurally
+   impossible, whatever three.js does with updateStyle. */
+#vcanvas canvas { display:block; position:absolute; inset:0;
+                  width:100% !important; height:100% !important; }
+#vhud { position:absolute; left:16px; top:14px; font:11px var(--mono);
+        color:#8d939b; pointer-events:none; }
+#vhud b { color:#e5e9e7; font-weight:500; }
+/* the measure tool's one line of instruction — quiet, but not a whisper */
+#vhud .hint { margin-top:5px; color:#c2b48a; letter-spacing:.02em; }
+/* A heap of parts drawn at their own origins is not an assembly, and must not be
+   presented as one. Amber, wraps, sits under the title. */
+#vhud .warn { margin-top:6px; max-width:56ch; color:#e0a352; line-height:1.45;
+              letter-spacing:.02em; }
+#vpanel { background:#1b1f21; border-left:1px solid #2c3437; color:#e5e9e7;
+          padding:14px; padding-top:46px; overflow-y:auto; }
+#vpanel h3 { font:600 10px/1.2 var(--ui); letter-spacing:.12em;
+             text-transform:uppercase; color:#6b7574; margin:16px 0 8px; }
+#vpanel h3:first-child { margin-top:0; }
+#vpanel .row { display:flex; align-items:center; gap:8px; margin:6px 0;
+               font-size:12.5px; }
+#vpanel .row .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+                   cursor:pointer; font-family:var(--mono); font-size:12px; }
+#vpanel .sw { width:10px; height:10px; border-radius:2px; flex:none; }
+#vpanel input[type=range] { width:100%; accent-color:#e5e9e7; }
+#vpanel input[type=checkbox] { accent-color:#e5e9e7; }
+#vpanel .vbtn { background:#22282a; border:1px solid #3a4448; border-radius:4px;
+                color:#e5e9e7; padding:5px 10px; cursor:pointer; font-size:12px; }
+#vpanel .vbtn:hover { border-color:#4e5a5e; }
+/* full screen: the Fullscreen API on #vbox where the browser allows it, else
+   the `max` class pins the room over the whole window (docked or not) */
+#vfull { position:absolute; right:98px; top:12px; z-index:41;
+         background:#22282a; border:1px solid #3a4448; color:#e5e9e7;
+         border-radius:4px; padding:5px 10px; cursor:pointer; font-size:13px;
+         line-height:1; }
+#vfull:hover, #vclose:hover { border-color:#4e5a5e; }
+#viewer.docked #vfull { right:12px; }
+#vbox:fullscreen { inset:0; border:0; border-radius:0; height:100%; width:100%; }
+#viewer.max, #viewer.docked.max { position:fixed; inset:0; z-index:40;
+                                 background:#101314; display:block; }
+#viewer.max #vbox, #viewer.docked.max #vbox { position:absolute; inset:0; border:0;
+                    border-radius:0; height:auto; box-shadow:none; }
+#vclose { position:absolute; right:12px; top:12px; z-index:41;
+          background:#22282a; border:1px solid #3a4448; color:#e5e9e7;
+          border-radius:4px; padding:5px 12px; cursor:pointer; font-size:12px; }
+#vbusy { position:absolute; inset:0; display:none; place-items:center;
+         color:#9aa4a2; font:13px var(--mono); background:rgba(16,19,20,.8); }
+#vbusy.on { display:grid; }
+/* ---- phones: the panel is a sheet under the canvas, collapsed by default ----
+   Desktop keeps the two-column room; the strip does not exist there. Opening
+   the sheet is a class on #vbox (popen), so the canvas cell changes size and
+   the ResizeObserver on #vcanvas re-frames the model. Applies docked too. */
+#vptoggle { display:none; }
+@media (max-width: 760px) {
+  #vbox { grid-template-columns:1fr; grid-template-rows:1fr auto auto; }
+  #vcanvas { min-height:0; }
+  #vptoggle { display:block; width:100%; text-align:left;
+              background:#1b1f21; border:0; border-top:1px solid #2c3437;
+              color:#e5e9e7; font:600 11px/1.2 var(--ui); letter-spacing:.1em;
+              text-transform:uppercase; padding:12px 14px; cursor:pointer; }
+  #vptoggle::after { content:'▴'; float:right; }
+  #vbox.popen #vptoggle::after { content:'▾'; }
+  #vpanel { display:none; border-left:0; padding-top:14px; max-height:45vh; }
+  #vbox.popen #vpanel { display:block; }
+}
+
+/* ================= file lightbox (the light room) =================
+ * The same contained-overlay pattern as #viewer — backdrop, one box, Esc /
+ * backdrop / ✕ to leave — but a SHEET rather than a dark room, because what it
+ * shows is a document: a drawing, a page of instructions, a source file. The
+ * 3D viewer keeps geometry; this keeps everything else, and every preview type
+ * carries the same Download button so the file is never trapped behind a
+ * viewer. */
+#lbox { position:fixed; inset:0; background:rgba(18,21,22,.42); z-index:45;
+        display:none; backdrop-filter:blur(2px); }
+#lbox.on { display:block; }
+#lbbox { position:absolute; inset:5vh 6vw; background:var(--sheet);
+         border:1px solid var(--rule-2); border-radius:6px;
+         box-shadow:0 30px 90px rgba(0,0,0,.4);
+         display:flex; flex-direction:column; overflow:hidden; }
+@media (max-width: 760px) { #lbbox { inset:2vh 2vw; } }
+#lbhead { display:flex; align-items:center; gap:9px; flex:none;
+          padding:9px 12px; border-bottom:1px solid var(--rule-2);
+          background:var(--sheet); }
+#lbhead .nm { font:13px var(--mono); font-weight:600; overflow:hidden;
+              text-overflow:ellipsis; white-space:nowrap; }
+#lbhead .sz { font:11px var(--mono); color:var(--ink-3); white-space:nowrap; }
+#lbhead .spacer { flex:1; }
+#lbhead a.btn { text-decoration:none; }
+#lbbody { flex:1; min-height:0; overflow:auto; background:var(--paper); }
+/* an image sits on the desk, centred, never upscaled past its own pixels */
+#lbbody.lb-image { display:grid; place-items:center; padding:16px; }
+#lbbody.lb-image img { max-width:100%; max-height:100%; object-fit:contain;
+                       background:#FBFCFA; border:1px solid var(--rule);
+                       box-shadow:0 2px 10px rgba(0,0,0,.08); }
+#lbbody.lb-md { background:var(--sheet); }
+/* a measure of ~90 characters: the box is wide, a readable line is not */
+#lbbody.lb-md .mddoc { max-height:none; max-width:92ch; margin:0 auto;
+                       padding:18px 20px 30px; font-size:13.5px; }
+#lbbody pre.filepre { margin:0; padding:14px 16px; font:12px/1.55 var(--mono);
+                      white-space:pre; background:var(--sheet); }
+#lbbody .lbnote { padding:10px 14px; font:11.5px var(--mono);
+                  color:var(--st-prototype); background:var(--st-prototype-bg);
+                  border-top:1px solid var(--rule-2); }
+#lbbody .lbwait { padding:22px 16px; font:12px var(--mono); color:var(--ink-3); }
+
+/* explode readiness chip beside "View 3D" (thumbs.explode_status) */
+.explchip { font:11px var(--mono); padding:2px 7px; border-radius:3px; border:1px solid var(--rule-2);
+            cursor:help; white-space:nowrap; }
+.explchip.ok  { color:var(--st-released); background:var(--st-released-bg); }
+.explchip.bad { color:var(--st-obsolete); background:var(--st-obsolete-bg); }
+.explchip.meh { color:var(--ink-3); background:var(--paper); }
+/* ================= flat pattern viewer (web/flat.js) =================
+ * A cutting mat, not a dark room: patterns and plasma profiles are drawn ON the
+ * desk, with the grid you would measure against. */
+.flatv { display:flex; flex-direction:column; gap:8px; min-height:0; }
+.flatbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.flatbar .btn.on { background:var(--ink); color:var(--sheet); }
+.flatseg { display:inline-flex; gap:2px; }
+.flatlayers { display:inline-flex; flex-wrap:wrap; gap:10px; font-size:12px; color:var(--ink-2); }
+.flatlayers input { vertical-align:-2px; margin:0; }
+.flatwarn { font:11.5px var(--mono); color:var(--st-prototype); background:var(--st-prototype-bg);
+            border:1px solid var(--rule); padding:5px 8px; border-radius:3px; }
+.flatbody { display:grid; grid-template-columns:minmax(0,1fr) 250px; gap:10px; min-height:0; flex:1; }
+@media (max-width: 900px) { .flatbody { grid-template-columns:1fr; } }
+.flatstage { position:relative; height:440px; background:#F7F8F4; border:1px solid var(--rule-2);
+             border-radius:3px; overflow:hidden; }
+.flatsvg { width:100%; height:100%; display:block; cursor:grab; touch-action:none; }
+.flatsvg:active { cursor:grabbing; }
+.flatsvg .fgrid { fill:none; stroke:#E3E6DE; stroke-width:1; }
+.flatsvg .fgrid2 { fill:none; stroke:#CBD0C4; stroke-width:1; }
+.flatsvg .fstock { fill:rgba(31,71,174,.035); stroke:#9AA3B5; stroke-width:1; }
+.flatsvg .fselv { stroke:#9AA3B5; stroke-width:1; stroke-dasharray:4 4; }
+.flatsvg .fdim { font-family:var(--mono); fill:var(--ink-2); }
+.flatsvg .fcut { fill:rgba(255,255,255,.75); stroke:var(--ink); stroke-width:1.4; }
+.flatsvg .fhole { fill:#F7F8F4; stroke:var(--ink); stroke-width:1.2; }
+.flatsvg .fsew { fill:none; stroke:#6B7280; stroke-width:1; stroke-dasharray:6 4; pointer-events:none; }
+.flatsvg .fnotch { fill:none; stroke:var(--ink); stroke-width:2; }
+.flatsvg .fmark { fill:none; stroke:var(--blue); stroke-width:1.2; stroke-dasharray:3 2; }
+.flatsvg .fgrain { stroke:#444; stroke-width:1.1; fill:none; pointer-events:none; }
+.flatsvg .flabel { fill:var(--ink-2); font-family:var(--ui); pointer-events:none; }
+.flatsvg .fpiece.hot .fcut { fill:var(--blue-bg); stroke:var(--blue); }
+.flatinfo { position:absolute; left:8px; top:8px; max-width:62%; background:rgba(255,255,255,.92);
+            border:1px solid var(--rule); border-radius:3px; padding:6px 9px; font-size:12px;
+            pointer-events:none; }
+.flatinfo .dim, .flatside .dim { color:var(--ink-3); font-size:11.5px; }
+.flatscale { position:absolute; left:10px; bottom:8px; border:1px solid var(--ink-2); border-top:0;
+             font:10.5px/1.2 var(--mono); color:var(--ink-2); padding:0 0 3px;
+             text-align:center; pointer-events:none; background:rgba(247,248,244,.8); }
+.flatside { font-size:12.5px; overflow:auto; }
+.flatside h4 { margin:12px 0 4px; font:600 10px/1.2 var(--ui); letter-spacing:.12em;
+               text-transform:uppercase; color:var(--ink-3); }
+.flatside .flatid { font:12px var(--mono); margin-top:2px; }
+.flatside .big { font:600 18px var(--mono); }
+.flatchecks, .flatdl { list-style:none; margin:0; padding:0; }
+.flatchecks li { padding:3px 0; border-bottom:1px solid var(--rule); }
+.flatchecks li.ok b { color:var(--st-released); }
+.flatchecks li.bad b { color:var(--st-obsolete); }
+.flatchecks li.unk b { color:var(--ink-3); }
+.flattab { width:100%; border-collapse:collapse; }
+.flattab td { padding:2px 4px 2px 0; border-bottom:1px solid var(--rule); vertical-align:top; }
+.flattab td.num { font:11.5px var(--mono); text-align:right; white-space:nowrap; }
+.flatdl li { padding:2px 0; }
+.flatnote { padding:10px; font:12px var(--mono); color:var(--ink-3); }
+#lbbody.lb-flat { background:var(--sheet); padding:10px; display:flex; flex-direction:column; }
+#lbbody.lb-flat .flatv { flex:1; }
+#lbbody.lb-flat .flatstage { height:auto; min-height:360px; }
+/* ============================================================
+   THE REPOSITORY — the part page as a repo page (§6c).
+
+   Same drawing office, one new idea: the REDLINE. On a marked-up
+   print, what is going away is struck through in red and what
+   replaces it is written beside it in green. That is the whole
+   visual grammar of the compare view — old struck in obsolete red,
+   new set in released green — so a delta reads as engineering
+   markup rather than as a code forge's gutter.
+
+   Everything else is furniture already in this stylesheet: .doc
+   cards, hairline rules, monospace data, lifecycle stamps.
+   ============================================================ */
+:root {
+  /* Washes, not stamps. A stamp background is loud enough to sign a
+     drawing with; a diff line needs to be readable under a hundred
+     repetitions, so these sit a third of the way from paper to ink. */
+  --del-wash: #FCF0EE;
+  --add-wash: #EFF6F1;
+  --del-gutter: #F3DAD6;
+  --add-gutter: #D9EADE;
+}
+
+/* ---- the repository band: full width, under the two columns ---- */
+#repo { margin:22px 0 0; }
+#repo > .band {
+  font:600 10px/1.2 var(--ui); letter-spacing:.12em; text-transform:uppercase;
+  color:var(--ink-3); margin:0 0 8px; display:flex; align-items:baseline; gap:10px;
+}
+#repo > .band .src { font:11px var(--mono); letter-spacing:0; text-transform:none; }
+/* Grid children default to a minimum of their content. A commit subject full
+   of part numbers then sets the column, and the column sets the page. */
+#repo .cols > div { min-width:0; }
+/* A ref is a literal — `v0.4.1`, `draft/v0.17.0` — and must not be shouted
+   into V0.4.1 by the card-heading rule it happens to sit inside. */
+.doc > h3 .right .note { font:12px var(--mono); text-transform:none;
+                         letter-spacing:0; color:var(--ink-2); }
+
+.repobar {
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  background:var(--sheet); border:1px solid var(--rule-2); border-bottom:none;
+  padding:9px 12px;
+}
+.repobar .counts { font:11.5px var(--mono); color:var(--ink-2); }
+.repobar .counts a { color:var(--ink-2); text-decoration:none;
+                     border-bottom:1px solid var(--rule-2); }
+.repobar .counts a:hover { color:var(--blue); border-bottom-color:var(--blue); }
+.repobar .spacer { flex:1; }
+/* PLM_GIT_MODE=read: the repo is a projection that follows the registry */
+.repobar .syncchip { font:11px var(--mono); padding:2px 7px; border-radius:3px;
+                     border:1px solid var(--rule-2); color:var(--ink-2); background:var(--paper);
+                     white-space:nowrap; cursor:help; }
+.repobar .syncchip.syncing { color:var(--st-prototype); background:var(--st-prototype-bg); }
+.repobar .syncchip.error { color:var(--st-obsolete); background:var(--st-obsolete-bg); }
+/* The bar at the TOP of an item page: the same controls, but standing on the
+   paper rather than capping a card. It sits directly under the title block
+   because the whole git surface used to be below the fold. */
+.repobar.flat { border:1px solid var(--rule-2); margin:-6px 0 0; }
+
+/* ================= item page: tabs ================= */
+nav.itabs { display:flex; gap:2px; flex-wrap:wrap; margin:0 0 16px;
+            border-bottom:1px solid var(--rule-2); padding-top:10px; }
+nav.itabs .itab {
+  display:inline-flex; align-items:center; gap:6px; padding:7px 13px;
+  font-size:13px; color:var(--ink-2); border:1px solid transparent;
+  border-bottom:2px solid transparent; margin-bottom:-1px;
+}
+nav.itabs .itab:hover { text-decoration:none; background:var(--sheet);
+                        color:var(--ink); }
+nav.itabs .itab.on { color:var(--ink); font-weight:600;
+                     border-bottom-color:var(--ink); background:var(--sheet); }
+nav.itabs .itab .n { font:11px var(--mono); color:var(--ink-3);
+                     background:var(--paper); border:1px solid var(--rule);
+                     border-radius:9px; padding:0 6px; }
+nav.itabs .itab.on .n { color:var(--ink-2); }
+@media (max-width: 760px) {
+  nav.itabs .itab { padding:7px 9px; font-size:12.5px; }
+}
+
+/* "You are looking at v0.2.0." The difference between reading history and
+   thinking you are reading the present. */
+.refbanner {
+  display:flex; gap:9px; align-items:center; flex-wrap:wrap;
+  background:var(--st-prototype-bg); border:1px solid var(--st-prototype);
+  border-left-width:3px; padding:8px 12px; margin:0 0 16px; font-size:12.5px;
+  color:#6b4400;
+}
+.refbanner .rf { font:12.5px var(--mono); font-weight:600; }
+.refbanner a { margin-left:auto; color:#6b4400; text-decoration:underline; }
+/* On a DRAFT ref the banner also carries the way into the review. These links
+   sit together, in reading order, and the "back to" link keeps the right end. */
+.refbanner .props { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+.refbanner .props a { margin-left:0; }
+.refbanner .props .note { color:#6b4400; opacity:.85; }
+
+/* the latest-commit strip above the tree */
+.lcstrip { display:flex; gap:10px; align-items:baseline; padding:8px 12px;
+           border-bottom:1px solid var(--rule); background:#FBFCFA;
+           font-size:12.5px; }
+.lcstrip .sha { font:11.5px var(--mono); color:var(--ink-3); flex:none; }
+.lcstrip a.sha { color:var(--blue); }
+.lcstrip .sub { min-width:0; overflow:hidden; text-overflow:ellipsis;
+                white-space:nowrap; }
+.lcstrip .rt { margin-left:auto; display:flex; gap:9px; align-items:baseline;
+               font:11px var(--mono); color:var(--ink-3); white-space:nowrap; }
+.lcstrip .rt .when { flex-direction:row; gap:6px; }
+@media (max-width: 760px) { .lcstrip .rt .who { display:none; } }
+
+/* ---- a release, as a row (sidebar card and Releases tab share it) ---- */
+.relrow { padding:10px 12px; border-bottom:1px solid var(--rule); }
+.relrow:last-child { border-bottom:none; }
+.relrow .hd { display:flex; gap:9px; align-items:baseline; flex-wrap:wrap; }
+.relrow .hd .rf { font:13px var(--mono); font-weight:600; }
+.relrow .hd .when { flex-direction:row; gap:7px; margin-left:auto;
+                    font:11px var(--mono); color:var(--ink-3); }
+.relrow .notes { font-size:12.5px; color:var(--ink-2); margin:6px 0 0;
+                 line-height:1.45; }
+.relrow .acts { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+.relrow .acts .btn { text-decoration:none; }
+.latestchip { font:10px var(--mono); letter-spacing:.08em; text-transform:uppercase;
+              border:1px solid var(--st-released); color:var(--st-released);
+              background:var(--st-released-bg); border-radius:2px; padding:1px 5px; }
+
+/* ---- History: one list, revisions and commits merged ---- */
+.histrow { display:grid; grid-template-columns:minmax(150px,auto) 1fr auto;
+           gap:12px; align-items:baseline; padding:9px 12px;
+           border-bottom:1px solid var(--rule); }
+.histrow:last-child { border-bottom:none; }
+.histrow:hover { background:var(--blue-bg); }
+.histrow .who { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+.histrow .what { min-width:0; font-size:12.5px; line-height:1.45; }
+.histrow .what .tr { font:11px var(--mono); color:var(--ink-3); margin-top:2px; }
+.histrow .rt { display:flex; gap:9px; align-items:center; justify-self:end;
+               font:11px var(--mono); color:var(--ink-3); white-space:nowrap; }
+.histrow .rt .when { flex-direction:row; gap:6px; }
+.histrow .rt .btn { text-decoration:none; }
+@media (max-width: 760px) {
+  .histrow { grid-template-columns:1fr; gap:4px; }
+  .histrow .rt { justify-self:start; }
+}
+
+/* ---- the Compare popover ---- */
+.cmppop { width:min(520px,92vw); padding:12px; }
+.cmppick { display:flex; gap:7px; align-items:center; flex-wrap:wrap; }
+.cmppick select { max-width:170px; }
+.cmpshort { margin-top:9px; padding-top:9px; border-top:1px solid var(--rule);
+            display:flex; gap:9px; align-items:baseline; flex-wrap:wrap; }
+.cmpshort .why { font:11px var(--mono); color:var(--ink-3); }
+
+/* The ref control. A drawing's revision block is a box you read the
+   current issue out of, so this is a box, not a pill. */
+.refbtn {
+  display:inline-flex; align-items:center; gap:8px; background:var(--sheet);
+  border:1.5px solid var(--ink); border-radius:2px; padding:4px 9px;
+  cursor:pointer; font:13px var(--mono); color:var(--ink);
+}
+.refbtn .glyph { color:var(--ink-3); font-size:12px; }
+.refbtn .caret { color:var(--ink-3); font-size:10px; }
+.refbtn:hover { background:var(--blue-bg); border-color:var(--blue); }
+.refwrap { position:relative; }
+
+.pop {
+  position:absolute; z-index:30; top:calc(100% + 5px); left:0;
+  background:var(--sheet); border:1px solid var(--ink);
+  box-shadow:0 14px 40px rgb(0 0 0 / .18);
+}
+.pop.right { left:auto; right:0; }
+/* Flipped UP when a menu on a row near the bottom of the window would open off
+   the end of the page. The alternative is a menu you have to scroll to read. */
+.pop.up { top:auto; bottom:calc(100% + 5px); }
+.refpop { width:min(560px, 88vw); }
+.reftabs { display:flex; border-bottom:1px solid var(--rule-2); }
+.reftabs button {
+  flex:1; background:none; border:0; border-bottom:2px solid transparent;
+  padding:8px 10px; cursor:pointer; font:600 11px/1.2 var(--ui);
+  letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3);
+}
+.reftabs button.on { color:var(--ink); border-bottom-color:var(--ink); }
+.reftabs button:hover { background:var(--paper); }
+.refflt {
+  width:100%; border:0; border-bottom:1px solid var(--rule); background:var(--sheet);
+  padding:7px 12px; font:12px var(--mono);
+}
+.refflt::placeholder { font-family:var(--ui); color:var(--ink-3); }
+.reflist { max-height:52vh; overflow-y:auto; }
+.refrow {
+  display:grid; grid-template-columns:auto auto 1fr auto; gap:8px;
+  align-items:baseline; padding:7px 12px; border-bottom:1px solid var(--rule);
+  cursor:pointer;
+}
+.refrow:last-child { border-bottom:none; }
+.refrow:hover { background:var(--blue-bg); }
+.refrow.on { box-shadow:inset 3px 0 0 var(--blue); }
+.refrow .rf { font:13px var(--mono); white-space:nowrap; }
+.refrow.on .rf { font-weight:700; }
+.refrow .sum {
+  grid-column:1 / 5; font-size:11.5px; color:var(--ink-2); line-height:1.35;
+  overflow:hidden; display:-webkit-box;
+  -webkit-line-clamp:2; -webkit-box-orient:vertical;
+}
+.refrow .dt { font:11px var(--mono); color:var(--ink-3); white-space:nowrap;
+              justify-self:end; }
+/* Quiet but always present: an affordance that only exists on hover is one
+   nobody finds, and "compare this release with the one before it" is the
+   second thing anyone wants from a release list. */
+.refrow .cmp {
+  border:1px solid var(--rule-2); background:var(--sheet); border-radius:2px;
+  font:11px var(--mono); padding:1px 5px; cursor:pointer; color:var(--ink-3);
+  opacity:.5;
+}
+.refrow:hover .cmp { opacity:1; }
+.refrow .cmp:hover { border-color:var(--blue); color:var(--blue); }
+.refrow .cmp:disabled { visibility:hidden; }
+
+/* ---- clone ---- */
+/* The clone popover carries the push recipe too, which makes it tall enough to
+   run off a laptop screen. Cap it and let it scroll rather than clipping the
+   credential line at the bottom, which is the one line people come back for. */
+.clonepop { width:min(520px,92vw); padding:12px; max-height:78vh; overflow-y:auto; }
+.clonerow + .clonerow { margin-top:11px; }
+.clonerow .lbl { display:block; margin-bottom:3px; }
+.clonerow .cmd { display:flex; gap:6px; align-items:stretch; }
+.clonerow code {
+  flex:1; min-width:0; font:11.5px/1.5 var(--mono); background:var(--paper);
+  border:1px solid var(--rule); padding:5px 7px; overflow-x:auto;
+  white-space:pre; color:var(--ink);
+}
+.clonerow .why { font-size:11px; color:var(--ink-3); margin-top:3px; }
+/* The push recipe. A command line and the prose about it are separate elements
+   on separate lines, always — a copy that swept up the explanation would paste
+   a shell line with a sentence glued to the end of it. */
+.pushrecipe { margin-top:13px; padding-top:12px; border-top:1px solid var(--rule-2); }
+.pushrecipe > .lbl { display:block; margin-bottom:4px; color:var(--ink-2); }
+.pushrecipe > .why { margin:0 0 9px; font-size:11.5px; color:var(--ink-2); }
+.clonerow > code { display:block; font:11.5px/1.5 var(--mono); background:var(--paper);
+                   border:1px solid var(--rule); padding:5px 7px; margin:3px 0 0;
+                   overflow-x:auto; white-space:pre; color:var(--ink); }
+.clonerow > code.tokenpath { color:var(--st-prototype); }
+
+/* ---- the file tree ---- */
+.gcrumb { font:12px var(--mono); color:var(--ink-3); padding:8px 12px;
+          border-bottom:1px solid var(--rule); background:#FBFCFA; }
+.gcrumb a { color:var(--ink-2); }
+table.gtree { width:100%; border-collapse:collapse; background:var(--sheet); }
+table.gtree td { padding:6px 12px; border-bottom:1px solid var(--rule);
+                 font-size:12.5px; vertical-align:baseline; }
+table.gtree tr:last-child td { border-bottom:none; }
+table.gtree tr:hover td { background:var(--blue-bg); }
+/* a folder's triangle folds it in place; deeper rows step in */
+td.gticon.gtfold { cursor:pointer; }
+td.gticon.gtfold:hover { color:var(--ink); }
+tr.frow.busy td.gticon { opacity:.4; }
+tr.frow[data-depth="1"] td.gtname { padding-left:30px; }
+tr.frow[data-depth="2"] td.gtname { padding-left:48px; }
+tr.frow[data-depth="3"] td.gtname { padding-left:66px; }
+tr.frow[data-depth="4"] td.gtname { padding-left:84px; }
+td.gticon { width:20px; padding-right:0 !important; color:var(--ink-3);
+            font:12px var(--mono); text-align:center; }
+/* Both text columns are `max-width:0` + ellipsis so a 60-character generated
+   filename truncates instead of running over the commit subject beside it. */
+td.gtname { font:12.5px var(--mono); white-space:nowrap; max-width:0; width:46%;
+            overflow:hidden; text-overflow:ellipsis; }
+td.gtname a { color:var(--ink); }
+td.gtname a:hover { color:var(--blue); }
+td.gtname .up { color:var(--ink-2); }
+td.gtmsg { color:var(--ink-2); font-size:12px; overflow:hidden;
+           text-overflow:ellipsis; white-space:nowrap; max-width:0; width:38%; }
+td.gtage { text-align:right; font:11px var(--mono); color:var(--ink-3);
+           white-space:nowrap; width:1%; }
+td.gtsz { text-align:right; font:11px var(--mono); color:var(--ink-3);
+          white-space:nowrap; width:1%; }
+@media (max-width: 900px) { td.gtmsg { display:none; } }
+
+/* A submodule pin is a BOM version. Released pins are set like any other
+   revision; an UNRELEASED one is dashed and carries its own mark, because
+   §5.1's rule — you cannot release above your least-mature child — only
+   reads as a rule if the page shows which children are not there yet. */
+.pin { font:11.5px var(--mono); border:1px solid var(--rule-2); border-radius:2px;
+       padding:0 5px; color:var(--ink-2); white-space:nowrap; }
+.pin.loose { border-style:dashed; border-color:var(--st-prototype);
+             color:var(--st-prototype); background:var(--st-prototype-bg); }
+.pinwarn { font:10px var(--mono); color:var(--st-prototype); white-space:nowrap;
+           letter-spacing:.04em; }
+/* Provenance is a footnote, not a paragraph: one line, the rest on hover. The
+   max-width is what keeps a nowrap cell from setting the TABLE's minimum and
+   pushing a narrow page into a sideways scroll. */
+td.srccell { white-space:nowrap; font-size:11.5px; max-width:240px;
+             overflow:hidden; text-overflow:ellipsis; }
+@media (max-width: 900px) {
+  td.srccell { white-space:normal; max-width:none; }
+}
+/* On a phone the attribute NAME already fills the row. Provenance steps out
+   rather than making the page scroll sideways to read a number; it is still in
+   the raw plm.toml one button away. */
+@media (max-width: 760px) { td.srccell { display:none; } }
+.extchip { font:10px var(--mono); letter-spacing:.06em; text-transform:uppercase;
+           border:1px dashed var(--rule-2); border-radius:2px; padding:0 4px;
+           color:var(--ink-3); }
+
+/* ---- commits ---- */
+/* Two lines, not three columns: a commit subject here is a full sentence of
+   engineering prose, and a date column beside it left one word per line. */
+.cmtrow { display:grid; grid-template-columns:auto 1fr; gap:4px 10px;
+          padding:8px 12px; border-bottom:1px solid var(--rule); }
+.cmtrow:last-child { border-bottom:none; }
+.cmtrow .sha { font:11.5px var(--mono); color:var(--ink-3); }
+.cmtrow .sub { font-size:12.5px; min-width:0; line-height:1.45; }
+/* min-width:0 on BOTH tracks' contents: without it the meta row's min-content
+   sets the 1fr track and the whole card pushes the page sideways on a phone. */
+.cmtrow .tr { grid-column:2; display:flex; gap:9px; align-items:center;
+              flex-wrap:wrap; font:11px var(--mono); color:var(--ink-3);
+              min-width:0; }
+.cmtrow .tr .when { flex-direction:row; gap:7px; flex-wrap:wrap; }
+@media (max-width: 760px) {
+  /* One column on a phone: the sha goes above its own subject rather than
+     setting a minimum width the page then has to scroll to reach. */
+  .cmtrow { grid-template-columns:1fr; }
+  .cmtrow .sha, .cmtrow .tr { grid-column:1; }
+}
+
+/* ================= the compare view ================= */
+#cmphead {
+  display:grid; grid-template-columns:1fr auto 1fr auto; gap:0;
+  background:var(--sheet); border:2px solid var(--ink); margin:0 0 18px;
+  align-items:stretch;
+}
+#cmphead .side { padding:9px 12px 11px; min-width:0; }
+#cmphead .cmplegend { grid-column:1 / -1; padding:6px 12px; border-top:1px solid var(--rule); }
+#cmphead .side.head { border-left:1px solid var(--rule-2); }
+#cmphead .arrow { display:grid; place-items:center; padding:0 10px;
+                  font:18px var(--mono); color:var(--ink-3);
+                  border-left:1px solid var(--rule-2); }
+#cmphead .tally { display:flex; flex-direction:column; justify-content:center;
+                  gap:3px; padding:9px 14px; border-left:1px solid var(--rule-2);
+                  background:#FBFCFA; white-space:nowrap; }
+#cmphead .side .pick { display:flex; gap:7px; align-items:center; margin-top:4px; }
+#cmphead .side select { max-width:100%; }
+#cmphead .side .sum { font-size:11.5px; color:var(--ink-2); margin-top:6px;
+                      line-height:1.4; }
+@media (max-width: 760px) {
+  #cmphead { grid-template-columns:1fr; }
+  #cmphead .side.head, #cmphead .arrow, #cmphead .tally {
+    border-left:none; border-top:1px solid var(--rule-2); }
+  #cmphead .arrow { padding:2px; transform:rotate(90deg); }
+}
+.tally .n { font:600 13px var(--mono); }
+.tally .n .plus { color:var(--plm-added); }
+.tally .n .minus { color:var(--plm-removed); }
+
+/* ---- the redline: section 1 ---- */
+.rlgrp + .rlgrp { border-top:1px solid var(--rule-2); }
+.rlgrp > .t { font:600 10px/1.2 var(--ui); letter-spacing:.12em;
+              text-transform:uppercase; color:var(--ink-3); padding:10px 12px 4px; }
+/* A FIXED key column, not `auto`. Each .rlrow is its own grid, so an `auto`
+   track sized itself per row and the values — and the provenance line under
+   each one — stepped in and out by 150 px down the card. A redline sheet has
+   one margin. */
+.rlrow { display:grid; grid-template-columns:238px 1fr; gap:10px;
+         padding:5px 12px; border-bottom:1px solid var(--rule); align-items:baseline; }
+@media (max-width: 760px) { .rlrow { grid-template-columns:1fr; gap:2px; } }
+.rlrow:last-child { border-bottom:none; }
+.rlrow > .k { font:12px var(--mono); color:var(--ink-2); word-break:break-word; }
+.rlrow > .val { min-width:0; font-size:12.5px; }
+.rlrow .src { font:10.5px var(--mono); color:var(--ink-3); margin-top:2px; }
+/* the two halves of a redline */
+.rl-del { font:12.5px var(--mono); color:var(--st-obsolete);
+          background:var(--del-wash); padding:0 4px; text-decoration:line-through;
+          text-decoration-thickness:1px; }
+.rl-add { font:12.5px var(--mono); color:var(--st-released);
+          background:var(--add-wash); padding:0 4px; }
+.rl-to { color:var(--ink-3); font:12px var(--mono); padding:0 3px; }
+.rl-mark { font:13px var(--mono); font-weight:700; width:12px; display:inline-block; }
+.rl-mark.add { color:var(--st-released); }
+.rl-mark.del { color:var(--st-obsolete); }
+/* a prose field (summary) redlines as two stacked paragraphs, not one line */
+.rlprose { font-size:12.5px; line-height:1.5; }
+.rlprose .was { color:var(--st-obsolete); background:var(--del-wash);
+                padding:4px 7px; display:block; }
+.rlprose .now { color:var(--ink); background:var(--add-wash); padding:4px 7px;
+                display:block; margin-top:4px;
+                box-shadow:inset 3px 0 0 var(--st-released); }
+.rlnote { padding:10px 12px; font-size:12.5px; color:var(--ink-2); }
+
+/* a submodule pin change, with the child's own commits underneath */
+.pinrow { padding:9px 12px; border-bottom:1px solid var(--rule); }
+.pinrow:last-child { border-bottom:none; }
+.pinrow .hd { display:flex; gap:9px; align-items:baseline; flex-wrap:wrap; }
+.pinrow .hd .who { font:13px var(--mono); }
+.pinrow .kids { margin:7px 0 0 14px; border-left:2px solid var(--rule-2);
+                padding-left:11px; }
+.pinrow .kids .k { font-size:12px; color:var(--ink-2); padding:2px 0;
+                   display:flex; gap:8px; align-items:baseline; }
+.pinrow .kids .k .sha { font:11px var(--mono); color:var(--ink-3); flex:none; }
+.pinrow .kids .k .s { min-width:0; }
+.pinrow .why { font-size:11.5px; color:var(--ink-3); margin-top:5px; }
+
+/* ---- the 3D overlay: section 2 ---- */
+.ovbar { display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+         padding:9px 12px; border-bottom:1px solid var(--rule); }
+/* The mode switch. It lives in the overlay bar, on a diff row's header and on
+   the featured cards — one appearance, because it is one control: "which of
+   this kind's registered widgets am I looking at". */
+.seg, .ovbar .seg { display:inline-flex; border:1px solid var(--rule-2); border-radius:3px;
+              overflow:hidden; }
+.seg button, .ovbar .seg button { border:0; background:var(--sheet); padding:4px 11px;
+                     cursor:pointer; font-size:12px; color:var(--ink-2);
+                     border-right:1px solid var(--rule-2); }
+.seg button:last-child, .ovbar .seg button:last-child { border-right:0; }
+.seg button.on, .ovbar .seg button.on { background:var(--ink); color:var(--sheet); }
+/* the overlay's four toggles: each its own switch, with its colour */
+.seg.toggles button { opacity:.55; }
+.seg.toggles button.on { opacity:1; background:var(--sheet); color:var(--ink); }
+.seg.toggles button .sw { display:inline-block; width:9px; height:9px; border-radius:2px;
+                          margin-right:6px; vertical-align:-1px; }
+.ovkey { display:inline-flex; gap:5px; align-items:center; font:11.5px var(--mono);
+         color:var(--ink-2); }
+.ovkey .sw { width:11px; height:11px; border-radius:2px; border:1px solid rgb(0 0 0 / .2); }
+/* The SIDE TAG — swatch + "old v0.4.0" / "new v0.4.1", nothing else; the ref,
+   commit, date and file are its tooltip and the legend's ⓘ (PLM_DIFF.sideTag). */
+.sidetag { display:inline-flex; gap:5px; align-items:center; font:600 11.5px var(--mono);
+           white-space:nowrap; vertical-align:middle; text-transform:none; letter-spacing:0; }
+.sidetag .sw, .plmlegend .sw { width:11px; height:11px; border-radius:2px; flex:none;
+           border:1px solid rgb(0 0 0 / .18); display:inline-block; }
+.sidetag.old { color:var(--plm-old); } .sidetag.old .sw { background:var(--plm-old); }
+.sidetag.new { color:var(--plm-new); } .sidetag.new .sw { background:var(--plm-new); }
+/* The LEGEND — one line, the same everywhere: ■ old ■ new ■ removed ■ added ⓘ */
+.plmlegend { display:inline-flex; gap:4px 12px; align-items:center; flex-wrap:wrap;
+             font:11.5px var(--mono); color:var(--ink-2); }
+.plmlegend .chg { display:inline-flex; gap:5px; align-items:center; white-space:nowrap; }
+.plmlegend .sw.removed { background:var(--plm-removed); }
+.plmlegend .sw.added { background:var(--plm-added); }
+.plmlegend .more { border:1px solid var(--rule-2); background:var(--sheet); color:var(--ink-3);
+                   border-radius:9px; font:11px/1 var(--ui); padding:2px 6px; cursor:pointer; }
+.plmlegend .more:hover, .plmlegend .more[aria-expanded="true"] { color:var(--blue); border-color:var(--blue); }
+.plmdetail { flex-basis:100%; display:grid; gap:2px; font:11px var(--mono); color:var(--ink-2);
+             overflow-wrap:anywhere; }
+.plmdetail[hidden] { display:none; }
+.plmdetail .old b { color:var(--plm-old); } .plmdetail .new b { color:var(--plm-new); }
+#vpanel .sidetag.old, #vpanel .plmdetail .old b { color:var(--plm-old-on-dark); }
+#vpanel .sidetag.new, #vpanel .plmdetail .new b { color:var(--plm-new-on-dark); }
+#vpanel .plmlegend { color:#c5ccc9; }
+#vpanel .plmlegend .more { background:#22282a; border-color:#3a4448; color:#c5ccc9; }
+#vpanel .plmdetail { color:#aeb6b3; }
+.ovbar .op { display:inline-flex; gap:7px; align-items:center; font-size:12px;
+             color:var(--ink-2); }
+.ovbar .op input { width:118px; accent-color:var(--ink); }
+.ovread { padding:9px 12px; font-size:12px; color:var(--ink-2);
+          border-bottom:1px solid var(--rule); background:#FBFCFA; }
+.ovread b { font-weight:600; }
+.ovmount { min-height:0; }
+
+/* The geometry CHOOSER. It says which mesh is showing and why that one is the
+   default, because "primary" is a rule in plm.toml, not an obvious fact. */
+.ovpick { display:flex; gap:9px; align-items:center; flex-wrap:wrap;
+          padding:9px 12px; border-bottom:1px solid var(--rule); }
+.ovpick select { max-width:min(420px, 60vw); font-family:var(--mono);
+                 font-size:12px; }
+.ovpick .why { font:11px var(--mono); color:var(--ink-3); }
+
+/* ---- image diffs: 2-up, swipe, onion skin ---- */
+.imgstage { position:relative; background:#FBFCFA; overflow:hidden;
+            max-height:640px; }
+.imgstage .lay { position:absolute; inset:0; }
+.imgstage .lay img { width:100%; height:100%; object-fit:contain; display:block; }
+/* The split line, so a swipe reads as one picture cut in two rather than two
+   pictures that happen to overlap. */
+.imgstage.swiping::after {
+  content:''; position:absolute; top:0; bottom:0; left:var(--split, 50%);
+  width:1px; background:var(--ink); opacity:.55; pointer-events:none;
+}
+.imgstage.swiping { cursor:ew-resize; }
+/* 2-up drops the stacking and stands them side by side. */
+.imgstage.two-up { position:static; display:grid; grid-template-columns:1fr 1fr;
+                   gap:1px; background:var(--rule-2); max-height:none; }
+.imgstage.two-up .lay { position:static; background:#FBFCFA; padding:8px; }
+.imgstage.two-up .lay img { max-height:420px; object-fit:contain; }
+.imgstage.two-up .lay.base { box-shadow:inset 3px 0 0 var(--plm-old); }
+.imgstage.two-up .lay.head { box-shadow:inset 3px 0 0 var(--plm-new); }
+.imgstage.two-up .lay .sidetag { display:flex; margin-bottom:6px; }
+.imgfoot { display:flex; gap:12px; justify-content:space-between;
+           padding:7px 12px; font:11px var(--mono); color:var(--ink-3);
+           border-top:1px solid var(--rule); flex-wrap:wrap; }
+/* one side only */
+.imgone { padding:10px 12px; }
+.imgone .lbl { display:block; margin-bottom:6px; }
+.imgone img { max-width:100%; max-height:440px; display:block;
+              background:#FBFCFA; border:1px solid var(--rule); }
+.imgone.added img { box-shadow:inset 0 0 0 3px var(--plm-added); }
+.imgone.removed img { box-shadow:inset 0 0 0 3px var(--plm-removed); }
+
+/* a paired row reads as ONE file: the key, then the two names it wore */
+.dfhead .p .nm { font:12.5px var(--mono); }
+.dfhead .p .was { font:11px var(--mono); color:var(--ink-3); margin-left:9px; }
+.st-renamed { color:var(--blue); background:var(--blue-bg); }
+.rolechip.primary { border-color:var(--ink); color:var(--ink); font-weight:600; }
+.dfile.wanted > .dfhead { box-shadow:inset 3px 0 0 var(--blue); }
+
+/* The per-row ⋯ is quiet until the row is hovered or the button is focused —
+   a file tree is for reading. It stays visible once its menu is open. */
+table.gtree td.gtmenu .fmenu { opacity:.4; }
+table.gtree tr:hover td.gtmenu .fmenu,
+table.gtree td.gtmenu .fmenu:focus-visible,
+table.gtree td.gtmenu .refwrap:has(.pop) .fmenu { opacity:1; }
+.pophead { padding:9px 12px; border-bottom:1px solid var(--rule-2);
+           font:11.5px var(--mono); color:var(--ink-2); background:#FBFCFA; }
+
+/* the dark room, docked into a card instead of covering the window */
+#viewer.docked { position:static; inset:auto; background:none;
+                 backdrop-filter:none; display:none; }
+#viewer.docked.on { display:block; }
+#viewer.docked #vbox { position:relative; inset:auto; border-radius:0;
+                       border:0; border-top:1px solid var(--rule-2);
+                       box-shadow:none; height:min(66vh, 600px); }
+#viewer.docked #vclose { display:none; }
+@media (max-width: 760px) {
+  /* the sheet rules above apply; docked, the canvas keeps a fixed height
+     instead of filling a window it is not covering */
+  #viewer.docked #vbox { grid-template-rows:320px auto auto; height:auto; }
+}
+
+/* ---- file diffs: section 3 ---- */
+.dfile { border-bottom:1px solid var(--rule-2); }
+.dfile:last-child { border-bottom:none; }
+.dfhead { display:flex; gap:9px; align-items:center; padding:7px 12px;
+          cursor:pointer; background:#FBFCFA; }
+.dfhead:hover { background:var(--blue-bg); }
+.dfhead .tw { width:12px; color:var(--ink-3); font-size:10px; flex:none; }
+.dfhead .p { font:12.5px var(--mono); overflow:hidden; text-overflow:ellipsis;
+             white-space:nowrap; min-width:0; flex:1; }
+.dfhead .st { font:10px var(--mono); letter-spacing:.06em; text-transform:uppercase;
+              border:1px solid; border-radius:2px; padding:0 5px; flex:none; }
+.st-added    { color:var(--plm-added);     background:var(--add-wash); }
+.st-deleted  { color:var(--plm-removed);   background:var(--del-wash); }
+.st-modified { color:var(--ink-2);         background:var(--paper); }
+.st-typechange { color:var(--st-superseded); background:var(--st-superseded-bg); }
+.dfhead .n { font:11.5px var(--mono); flex:none; }
+.dfhead .n .plus { color:var(--plm-added); }
+.dfhead .n .minus { color:var(--plm-removed); }
+/* A bounded, scrolling panel — the inset shade at the foot says "there is more
+   below" so a clipped last line does not read as a broken render. */
+.dfbody { overflow:auto; max-height:560px;
+          border-top:1px solid var(--rule); background:var(--sheet);
+          box-shadow:inset 0 -14px 12px -12px rgb(0 0 0 / .16); }
+/* `width:max-content` is what makes the panel scroll SIDEWAYS: a 1fr track
+   would shrink each row to the box and silently clip a long source line. */
+.dfbody .dline {
+  font:12px/1.55 var(--mono); white-space:pre; padding:0 12px 0 0;
+  display:grid; grid-template-columns:14px auto; gap:0;
+  width:max-content; min-width:100%;
+}
+.dfbody .dline .g { text-align:center; color:var(--ink-3); user-select:none;
+                    font-size:11px; }
+.dfbody .dline.add { background:var(--add-wash); color:var(--plm-added-ink); }
+.dfbody .dline.add .g { background:var(--add-gutter); color:var(--plm-added); }
+.dfbody .dline.del { background:var(--del-wash); color:var(--plm-removed-ink); }
+.dfbody .dline.del .g { background:var(--del-gutter); color:var(--plm-removed); }
+.dfbody .dline.hunk { background:var(--blue-bg); color:var(--blue);
+                      font-size:11.5px; }
+.dfbody .dline.hunk .g { background:var(--blue-bg); }
+.dfbody .dline.meta { color:var(--ink-3); font-size:11px; }
+.dfnote { padding:9px 12px; font-size:12px; color:var(--ink-2); background:#FBFCFA; }
+.dfnote b { font-family:var(--mono); font-weight:600; }
+.dfnote .why { font-size:11.5px; color:var(--ink-3); margin-top:4px; }
+.dfmore { display:block; width:100%; border:0; border-top:1px solid var(--rule);
+          background:var(--paper); padding:6px; cursor:pointer; font:11.5px var(--mono);
+          color:var(--ink-2); }
+.dfmore:hover { background:var(--blue-bg); color:var(--blue); }
+
+/* ============================================================
+   THE PROPOSAL — the human's side of the write path.
+
+   Same drawing office. One new object: the DECISION BLOCK, set
+   like the approval box in a title block — heavy rule, the
+   question stated, the signature line under it. And one new
+   voice: a REFUSAL, printed verbatim in monospace, because the
+   write path answers a bad approval with a paragraph that tells
+   you what to do next and flattening it into a toast throws the
+   useful half away.
+   ============================================================ */
+
+/* ---- a draft, as a proposal row (Drafts tab) ---- */
+.draftrow { padding:11px 12px; border-bottom:1px solid var(--rule); }
+.draftrow:last-child { border-bottom:none; }
+.draftrow .hd { display:flex; gap:9px; align-items:baseline; flex-wrap:wrap; }
+.draftrow .hd .rf { font:13px var(--mono); font-weight:600; }
+.draftrow .hd .rt { margin-left:auto; display:flex; gap:9px; align-items:baseline;
+                    font:11px var(--mono); color:var(--ink-3); }
+.draftrow .hd .rt .when { flex-direction:row; gap:6px; }
+.vchip { font:11px var(--mono); border:1px solid var(--rule-2); border-radius:2px;
+         padding:0 5px; color:var(--ink-2); }
+.targetchip { font:10px var(--mono); letter-spacing:.06em; text-transform:uppercase;
+              border:1px solid var(--blue); color:var(--blue);
+              background:var(--blue-bg); border-radius:2px; padding:1px 5px; }
+.draftrow .notes { font-size:12.5px; color:var(--ink-2); margin:6px 0 0;
+                   line-height:1.45; }
+.draftrow .facts, .feedrow .qsize {
+  display:flex; gap:12px; align-items:baseline; flex-wrap:wrap;
+  margin:7px 0 0; font:11.5px var(--mono); color:var(--ink-2);
+}
+.draftrow .facts .n .plus, .feedrow .qsize .n .plus { color:var(--plm-added); }
+.draftrow .facts .n .minus, .feedrow .qsize .n .minus { color:var(--plm-removed); }
+.pinbump { color:var(--st-superseded); background:var(--st-superseded-bg);
+           border:1px solid var(--st-superseded); border-radius:2px; padding:0 5px;
+           font-size:11px; }
+.draftrow .facts .sha, .draftrow .facts .ahead { color:var(--ink-3); }
+/* What is designed and not built. Dotted, quiet, and it says so on hover —
+   never a zero, because a zero reads as a measurement. */
+.soon, .draftrow .facts .soon { color:var(--ink-3); border-bottom:1px dotted var(--rule-2);
+                                cursor:help; }
+.draftrow .acts { display:flex; gap:6px; margin-top:9px; flex-wrap:wrap; }
+.draftrow .acts .btn { text-decoration:none; }
+.draftrow .why { font-size:11.5px; color:var(--ink-3); margin-top:7px; }
+.submitbar { display:flex; gap:7px; align-items:center; flex-wrap:wrap;
+             margin:9px 0 0; padding:9px 10px; background:#FBFCFA;
+             border:1px solid var(--rule-2); border-left:3px solid var(--blue); }
+.submitbar .lbl { color:var(--ink-2); }
+.submitbar .subnote { flex:1; min-width:150px; background:var(--sheet);
+                      border:1px solid var(--rule-2); border-radius:3px;
+                      padding:4px 8px; font:12px var(--ui); }
+.feedrow .qsize { margin-top:4px; font-size:11px; }
+.qrefusal:not(:empty) { padding:0 12px 12px; }
+
+/* ---- the proposal header ---- */
+#prophead { display:grid; grid-template-columns:1fr auto; background:var(--sheet);
+            border:2px solid var(--ink); margin:0 0 18px; }
+#prophead .main { padding:11px 14px 13px; min-width:0; }
+#prophead .ttl { font:600 17px/1.3 var(--ui); }
+#prophead .sub { display:flex; gap:9px; align-items:center; flex-wrap:wrap;
+                 margin-top:7px; font-size:12.5px; color:var(--ink-2); }
+#prophead .sub .pnum { font:13px var(--mono); font-weight:600; color:var(--ink); }
+#prophead .sub .on { font:12px var(--mono); color:var(--ink-2);
+                     border-bottom:1px solid var(--rule-2); }
+#prophead .sub .on:hover { color:var(--blue); border-bottom-color:var(--blue);
+                           text-decoration:none; }
+#prophead .sub .when { flex-direction:row; gap:7px; font:11px var(--mono);
+                       color:var(--ink-3); }
+#prophead .sub .decided { font:11px var(--mono); text-transform:uppercase;
+                          letter-spacing:.06em; color:var(--ink-3); }
+#prophead .letter { margin-top:9px; padding:7px 10px; background:#FBFCFA;
+                    border-left:3px solid var(--rule-2); font-size:12.5px;
+                    color:var(--ink-2); white-space:pre-wrap; }
+/* the explode waiver (ops.explode_gate): a decision the approver is accepting,
+   so it is set apart from the covering letter, in the prototype/caution ink. */
+#prophead .waiver { margin-top:8px; padding:7px 10px; font-size:12.5px;
+                    color:var(--st-prototype); background:var(--st-prototype-bg);
+                    border:1px solid var(--rule); border-left:3px solid var(--st-prototype);
+                    border-radius:3px; overflow-wrap:anywhere; }
+#prophead .waiver q { color:var(--ink); }
+#prophead .refs { display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+                  margin-top:10px; padding-top:9px;
+                  border-top:1px solid var(--rule); }
+#prophead .refs .rf { font:12.5px var(--mono); }
+#prophead .refs .rf.base { color:var(--plm-old); }
+#prophead .refs .rf.head { color:var(--plm-new); }
+#prophead .proplegend { margin-top:6px; }
+#prophead .refs .arrow { color:var(--ink-3); font:13px var(--mono); }
+#prophead .refs .sha { font:11px var(--mono); color:var(--ink-3); cursor:help; }
+#prophead .tally { display:flex; flex-direction:column; justify-content:center;
+                   gap:3px; padding:11px 14px; border-left:1px solid var(--rule-2);
+                   background:#FBFCFA; white-space:nowrap; }
+#prophead .tally .n { font:600 13px var(--mono); }
+#prophead .tally .n .plus { color:var(--plm-added); }
+#prophead .tally .n .minus { color:var(--plm-removed); }
+#prophead .tally .btn { text-decoration:none; }
+/* The release header reuses this block; `.body` is its one-sentence statement
+   of what a promotion is, and `.range` is the refs/workflow line. */
+#prophead .body { margin-top:8px; font-size:12.5px; line-height:1.5;
+                  color:var(--ink-2); }
+#prophead .range { display:flex; gap:9px; align-items:baseline; flex-wrap:wrap;
+                   margin-top:10px; padding-top:9px;
+                   border-top:1px solid var(--rule); }
+#prophead .range + .range { margin-top:6px; padding-top:0; border-top:0; }
+#prophead .range .lbl { font:10px var(--mono); letter-spacing:.07em;
+                        text-transform:uppercase; color:var(--ink-3); }
+#prophead .range .rf { font:12.5px var(--mono); }
+#prophead .range .sha { font:11px var(--mono); color:var(--ink-3); }
+@media (max-width: 760px) {
+  #prophead { grid-template-columns:1fr; }
+  #prophead .tally { border-left:0; border-top:1px solid var(--rule-2);
+                     align-items:flex-start; }
+  #prophead .ttl { font-size:15.5px; }
+}
+
+/* ---- the release gate, before the click ---- */
+.gatecard.blocks { border-color:var(--st-obsolete); }
+.gatecard .verdict { padding:10px 12px; font-size:12.5px; line-height:1.5;
+                     border-bottom:1px solid var(--rule); }
+.gatecard .verdict.bad { background:var(--del-wash); color:#8A1C13;
+                         box-shadow:inset 3px 0 0 var(--st-obsolete); }
+.gatecard .verdict.warn { background:var(--st-prototype-bg); color:#6b4400;
+                          box-shadow:inset 3px 0 0 var(--st-prototype); }
+.gatecard .verdict.ok { background:var(--add-wash); color:#0F5124;
+                        box-shadow:inset 3px 0 0 var(--st-released); }
+.gaterow { display:flex; gap:9px; align-items:baseline; flex-wrap:wrap;
+           padding:6px 12px; border-bottom:1px solid var(--rule); }
+.gaterow:last-child { border-bottom:none; }
+.gaterow .who { font:12.5px var(--mono); min-width:190px; }
+/* On a phone the path already fills the line; a 190px column there just pushes
+   the pin to the far edge with a gap in the middle. */
+@media (max-width: 760px) { .gaterow .who { min-width:0; } }
+
+/* ---- the timeline ---- */
+.tlrow { display:grid; grid-template-columns:22px 1fr auto; gap:4px 9px;
+         padding:8px 12px; border-bottom:1px solid var(--rule); align-items:baseline; }
+.tlrow:last-child { border-bottom:none; }
+.tlrow .ic { text-align:center; color:var(--ink-3); font:12px var(--mono); }
+.tlrow .b { min-width:0; }
+.tlrow .l { font-size:12.5px; line-height:1.45; }
+.tlrow .l .sha, .tlrow .l .rf { font:11.5px var(--mono); color:var(--ink-3); }
+.tlrow .d { font:11.5px var(--mono); color:var(--ink-3); margin-top:2px;
+            line-height:1.45; word-break:break-word; }
+.tlrow > .when { font:11px var(--mono); color:var(--ink-3); flex-direction:row;
+                 gap:7px; white-space:nowrap; }
+.tlrow.approved .ic { color:var(--st-released); }
+.tlrow.rejected .ic { color:var(--st-obsolete); }
+.tlrow.submitted .ic { color:var(--blue); }
+@media (max-width: 760px) {
+  .tlrow { grid-template-columns:22px 1fr; }
+  .tlrow > .when { grid-column:2; }
+}
+
+/* ---- the decision block ---- */
+.doc.decide { border-width:2px; border-color:var(--ink); }
+.doc.decide > h3 { background:var(--paper); }
+.decnote { display:block; width:100%; margin:9px 0 0; min-height:62px;
+           background:var(--paper); border:1px solid var(--rule-2);
+           border-radius:3px; padding:7px 9px; font:12.5px var(--ui);
+           resize:vertical; }
+.doc.decide .acts { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+.doc.decide .out:not(:empty) { margin-top:12px; }
+
+/* A refusal, verbatim. Monospace, its own line breaks, a red rule down the
+   side — the write path wrote a paragraph with the fix in it and the UI's job
+   is to not lose a word of it. */
+.refusal { border:1px solid var(--st-obsolete); background:var(--del-wash); }
+.refusal .hd { display:flex; gap:8px; align-items:center; padding:7px 11px;
+               border-bottom:1px solid var(--del-gutter); }
+.refusal .hd .x { color:var(--st-obsolete); font-weight:700; }
+.refusal .hd .lbl { color:var(--st-obsolete); }
+.refusal pre { margin:0; padding:11px; font:12px/1.55 var(--mono);
+               white-space:pre-wrap; word-break:break-word; color:#8A1C13;
+               max-height:420px; overflow:auto; }
+/* …and its opposite: what actually happened when it worked. */
+.approved { border:1px solid var(--st-released); background:var(--add-wash); }
+.approved .hd { display:flex; gap:8px; align-items:center; padding:7px 11px;
+                border-bottom:1px solid var(--add-gutter); }
+.approved .hd .x { color:var(--st-released); font-weight:700; }
+.approved .hd .lbl { color:var(--st-released); }
+.approved table.led td { border-bottom-color:var(--add-gutter); }
+.approved .note { padding:10px 12px; }
+.approved .acts { display:flex; gap:7px; padding:10px 12px; flex-wrap:wrap; }
+.approved .acts .btn { text-decoration:none; }
+
+/* ---- stage 3c: who decided, the release workflow, the policy line ----
+   AUTO and BOT are deliberately loud and deliberately DIFFERENT from each
+   other: "the rule Geoff wrote merged this" and "an agent decided this" are
+   different sentences about accountability, and a ledger that drew them the
+   same way would be worse than no ledger. The human case gets no chip at all —
+   a badge on the normal path is noise, and noise is what stops people reading
+   badges. */
+.autochip, .botchip { font:10px var(--mono); letter-spacing:.09em;
+                      text-transform:uppercase; border-radius:2px;
+                      padding:1px 5px; cursor:help; white-space:nowrap; }
+.autochip { border:1px solid var(--st-superseded); color:var(--st-superseded);
+            background:var(--st-superseded-bg); }
+.botchip  { border:1px dashed var(--blue); color:var(--blue);
+            background:var(--blue-bg); }
+
+.doc.wf .wfrow { display:flex; gap:10px; align-items:flex-start;
+                 padding:8px 0; border-bottom:1px solid var(--rule); }
+.doc.wf .wfrow:last-child { border-bottom:none; }
+.doc.wf .wfrow .mark { font:13px var(--mono); width:1.2em; flex:none;
+                       line-height:1.5; }
+.doc.wf .wfrow .mark.pass { color:var(--st-released); }
+.doc.wf .wfrow .mark.fail { color:var(--st-obsolete); }
+.doc.wf .wfrow .mark.todo, .doc.wf .wfrow .mark.skipped { color:var(--ink-3); }
+.doc.wf .wfrow .txt { min-width:0; flex:1; }
+.doc.wf .wfrow .line { font-size:13px; line-height:1.45; }
+.doc.wf .wfrow.done .line { color:var(--ink-2); }
+.doc.wf .wfrow .by { font:11.5px var(--mono); color:var(--ink-3); margin-top:3px;
+                     display:flex; gap:7px; align-items:baseline;
+                     flex-wrap:wrap; }
+/* `when()` stacks its two lines by default; on one line of attribution it has
+   to read as part of the sentence. */
+.doc.wf .wfrow .by .when { flex-direction:row; gap:7px; }
+.doc.wf .wfrow .why { font-size:11.5px; color:var(--ink-3); margin-top:3px;
+                      font-family:var(--sans); width:100%; }
+.doc.wf .wfrow .btn { flex:none; align-self:center; }
+.doc.wf .wfquorum { border-top:2px solid var(--rule-2); }
+.doc.gate { border-color:var(--st-obsolete); }
+.doc.gate > h3 { color:var(--st-obsolete); }
+
+/* A 64-character sha256 in a monospace cell sets the table's minimum width and
+   pushes the whole page sideways on a phone. The evidence hash IS the point of
+   that row, so it wraps rather than being hidden or truncated. */
+.approved table.led, .doc.gate table.led { width:100%; table-layout:fixed; }
+.approved table.led td, .doc.gate table.led td { overflow-wrap:anywhere; }
+.approved table.led td.dim, .doc.gate table.led td.dim { width:10em; }
+@media (max-width: 560px) {
+  .approved table.led td.dim, .doc.gate table.led td.dim { width:7.5em; }
+}
+
+.policyline { margin-top:9px; font:11.5px var(--mono); color:var(--ink-3);
+              display:flex; gap:8px; flex-wrap:wrap; align-items:baseline;
+              border-top:1px solid var(--rule); padding-top:8px; }
+.policyline .k { color:var(--ink); font-weight:600; }
+.policyline .v { font-family:var(--sans); font-size:12px; color:var(--ink-2);
+                 flex:1; min-width:180px; }
+.feedrow.relq .thumbbox .noimg { font:20px var(--mono); color:var(--ink-3); }
+/* A promotion's subtitle is `v0.1.0 · prototype → released`, which is the whole
+   point of the row and must not be ellipsised away. */
+.feedrow.relq .who .nm { white-space:normal; overflow:visible; }
+.fld { display:flex; gap:9px; align-items:baseline; margin:10px 0 0;
+       flex-wrap:wrap; }
+.fld .k { font:11px var(--mono); letter-spacing:.06em; text-transform:uppercase;
+          color:var(--ink-3); }
+/* `.pop` is `position:absolute` inside a shrink-to-fit span, so a popover with
+   no width of its own collapses to the button. Every other popover here states
+   one; this is the promote panel's. */
+.pop.promote { width:min(430px, calc(100vw - 24px)); }
+.pop.promote .decnote { min-height:78px; }
+.pop.promote .acts { display:flex; gap:8px; margin-top:11px; }
+
+/* Utility the markup already asks for (a badge with nothing to say must not
+   draw a bubble in the masthead). */
+.hide { display:none !important; }
+
+/* ---- STAGE 6 HOOK (2 of 2): the approvals queue on a phone --------------
+   Pre-existing and measured, not caused by checks: `.feedrow`'s four fixed-ish
+   grid tracks (84px + 170px + 1fr + auto) do not fit 430 px, and the browser
+   resolves it by giving `.what` a computed width of **0px**. The submission
+   note, the size figures, the pin-bump chip and now the checks rollup are all
+   in that column, so on a phone the queue is five thumbnails and four buttons
+   and nothing to decide on — while `scrollWidth === innerWidth` stays true,
+   which is why it survived stage 4's narrow pass.
+   §2.8 wants the approval doable from the phone; this is the whole reason it
+   is not. One stacked layout, at the END of the stylesheet so the merge is
+   trivial. */
+@media (max-width:560px) {
+  .feedrow { grid-template-columns:84px 1fr; gap:10px 12px; align-items:start; }
+  .feedrow .who  { grid-column:2; }
+  .feedrow .what { grid-column:1/-1; white-space:normal; overflow:visible;
+                   text-overflow:clip; }
+  .feedrow .meta { grid-column:1/-1; text-align:left; align-items:stretch; }
+  .feedrow .meta span { justify-content:flex-start !important; }
+}
+
+/* ---- STAGE 10: relations by home, coupons as evidence, project readiness ---- */
+/* A test outcome is a stamp of its own: pass / fail / pending, never colour
+   alone — the word is always there. */
+.resultchip { font:10px var(--mono); letter-spacing:.06em; text-transform:uppercase;
+              border:1px solid currentColor; border-radius:2px; padding:0 4px;
+              margin-left:5px; white-space:nowrap; }
+.resultchip.pass    { color:var(--st-released);  background:var(--st-released-bg); }
+.resultchip.fail    { color:var(--st-obsolete);  background:var(--st-obsolete-bg); }
+.resultchip.pending { color:var(--st-prototype); background:var(--st-prototype-bg); }
+/* where a claim is recorded — and, on the inverse side, that it is derived */
+.relhome { font:11px var(--mono); color:var(--ink-3); margin-top:3px;
+           overflow-wrap:anywhere; }
+.relline { display:flex; flex-wrap:wrap; gap:4px 8px; align-items:center; }
+.relline .relver { font:12px var(--mono); color:var(--ink-2); }
+.relwhy { font-size:12px; color:var(--ink-3); margin-top:3px; line-height:1.4;
+          overflow-wrap:anywhere; }
+.relgroup table.led { width:100%; table-layout:fixed; }
+.relgroup table.led td.bomthumb { width:52px; }
+.relgroup table.led td:last-child { width:74px; text-align:right; vertical-align:top; }
+.relhome .mono { color:var(--ink-3); }
+/* a checklist line attested BY REFERENCE */
+.evref { display:inline-flex; align-items:baseline; gap:4px; flex-wrap:wrap;
+         border:1px solid var(--st-released); background:var(--st-released-bg);
+         color:var(--ink-2); border-radius:2px; padding:1px 6px; cursor:help; }
+.evref a.num { font-weight:600; }
+.evref .resultchip { margin-left:2px; }
+.doc.wf .wfrow .evbtn { display:inline-flex; align-items:center; gap:4px;
+                        margin-top:6px; align-self:flex-start; }
+.doc.wf .wfrow .evbtn b { font:600 11.5px var(--mono); }
+/* the project page */
+.projlink { font:11px var(--mono); color:var(--ink-3); }
+.modechip { font:600 11px var(--mono); letter-spacing:.08em; text-transform:uppercase;
+            border:1px solid currentColor; border-radius:2px; padding:1px 7px; }
+.modechip.m-off   { color:var(--st-draft); }
+.modechip.m-read  { color:var(--blue); background:var(--blue-bg); }
+.modechip.m-write { color:var(--st-released); background:var(--st-released-bg); }
+.flipgrid { display:grid; grid-template-columns:1fr 1fr; gap:0 20px; margin-top:20px;
+            align-items:start; }
+.flipgrid > .doc { min-width:0; }
+.doc.flip { border-width:2px; }
+.doc.flip.ok    { border-color:var(--st-released); }
+.doc.flip.warn  { border-color:var(--st-prototype); }
+.doc.flip.block { border-color:var(--st-obsolete); }
+.doc.flip > h3 .verdict { font:600 11px var(--mono); text-transform:none; letter-spacing:0; }
+.doc.flip.ok    > h3 .verdict { color:var(--st-released); }
+.doc.flip.warn  > h3 .verdict { color:var(--st-prototype); }
+.doc.flip.block > h3 .verdict { color:var(--st-obsolete); }
+.doc.flip .now { font:12px var(--mono); color:var(--ink-2); margin:0 0 10px; }
+.doc.flip .lbl { margin:12px 0 5px; }
+.doc.flip ul.will { margin:0; padding-left:18px; font-size:13px; line-height:1.5; }
+.doc.flip ul.will li { margin:2px 0; }
+.finding { display:flex; gap:9px; padding:7px 0; border-top:1px solid var(--rule);
+           font-size:13px; line-height:1.45; }
+.finding .lvl { font:600 10px/1.7 var(--mono); text-transform:uppercase; width:4.2em;
+                flex:none; letter-spacing:.06em; }
+.finding.block .lvl { color:var(--st-obsolete); }
+.finding.warn  .lvl { color:var(--st-prototype); }
+.finding.info  .lvl { color:var(--ink-3); }
+.finding .txt { min-width:0; flex:1; }
+.finding .fix { margin-top:4px; font-size:12px; }
+.finding .fix code, .doc.flip .cmd code { font:11.5px var(--mono); overflow-wrap:anywhere;
+                                           background:var(--paper); padding:1px 4px; }
+.doc.flip .cmd { margin-top:12px; border-top:1px solid var(--rule); padding-top:4px; }
+.doc.flip .cmd code { display:block; padding:6px 8px; }
+details.items > summary { cursor:pointer; font:11.5px var(--mono); color:var(--ink-2);
+                          margin-top:4px; }
+details.items ul { margin:4px 0 0; padding-left:18px; font:11.5px/1.5 var(--mono);
+                   color:var(--ink-2); overflow-wrap:anywhere; }
+details.items.pad { padding:4px 12px 8px; }
+table.kvt { width:100%; }
+table.kvt td.mono { font:12px var(--mono); text-align:right; }
+.dim.small { font-size:11.5px; }
+@media (max-width:760px) {
+  .flipgrid { grid-template-columns:1fr; }
+}
+</style>
+</head>
+<body>
+
+<div id="mast">
+  <div class="title"><a href="/">plm</a> <span class="reg">— part registry</span></div>
+  <nav id="mastNav">
+    <a href="/" data-nav="dash">Dashboard</a>
+    <a href="/registry" data-nav="registry">Registry</a>
+    <a href="/pulls" data-nav="approvals">Pull requests</a>
+  </nav>
+  <!-- The bell (§2.9): the approvals count, and a dropdown of what is waiting
+       on you — web/changes.js installs it. -->
+  <button id="bell" type="button" aria-haspopup="menu" aria-expanded="false" title="Waiting on you">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 16a2 2 0 0 0 1.985-1.75c.017-.137-.097-.25-.235-.25h-3.5c-.138 0-.252.113-.235.25A2 2 0 0 0 8 16ZM3 5a5 5 0 0 1 10 0v2.947c0 .05.015.098.042.139l1.703 2.555A1.519 1.519 0 0 1 13.482 13H2.518a1.516 1.516 0 0 1-1.263-2.36l1.703-2.554A.255.255 0 0 0 3 7.947Zm5-3.5A3.5 3.5 0 0 0 4.5 5v2.947c0 .346-.102.683-.294.97l-1.703 2.556a.017.017 0 0 0-.003.01l.001.006c0 .002.002.004.004.006l.006.004.007.001h10.964l.007-.001.006-.004.004-.006.001-.007a.017.017 0 0 0-.003-.01l-1.703-2.554a1.745 1.745 0 0 1-.294-.97V5A3.5 3.5 0 0 0 8 1.5Z"/></svg>
+    <span id="apprCount" class="badge hide"></span>
+  </button>
+  <input id="gq" placeholder="Search parts, pull requests, context…" autocomplete="off">
+  <span id="instanceBadge" class="hide"></span>
+  <div class="stats" id="mastStats"></div>
+  <div class="spacer"></div>
+  <div class="who" id="whoami"></div>
+  <div class="api">/api</div>
+</div>
+
+<div id="page"></div>
+<div id="toast" role="status"></div>
+
+<div id="viewer" aria-hidden="true">
+  <div id="vbox">
+    <div id="vcanvas">
+      <div id="vhud"></div>
+      <div id="vbusy">loading geometry…</div>
+    </div>
+    <button id="vfull" title="Full screen (Esc leaves)">⛶</button>
+    <button id="vclose">Close ✕</button>
+    <!-- Phone only: the panel (explode slider, bodies list) stacks UNDER the
+         canvas and starts collapsed, so the part gets the screen. This strip
+         is the panel's header and its toggle. -->
+    <button id="vptoggle" aria-expanded="false" aria-controls="vpanel">Parts &amp; controls</button>
+    <div id="vpanel"></div>
+  </div>
+</div>
+
+<div id="lbox" aria-hidden="true">
+  <div id="lbbox" role="dialog" aria-modal="true" aria-labelledby="lbname">
+    <div id="lbhead">
+      <span class="nm" id="lbname"></span>
+      <span class="rolechip" id="lbrole"></span>
+      <span class="sz" id="lbsize"></span>
+      <span class="spacer"></span>
+      <!-- The SAME ⋯ menu every file row has: download, copy link, compare
+           with another ref, send to the build plate. A preview is a way of
+           looking at a file, not a different file. -->
+      <span id="lbmenu"></span>
+      <button class="btn" id="lbclose">Close ✕</button>
+    </div>
+    <div id="lbbody"></div>
+  </div>
+</div>
+
+<!-- Every URL here is ABSOLUTE (stage 22): the shell is served at /N/compare/a...b
+     too, where a relative `app.js` would resolve to /N/compare/app.js. -->
+<script src="/vendor/three.min.js"></script>
+<script src="/vendor/OrbitControls.js"></script>
+<script src="/vendor/STLLoader.js"></script>
+<script>
+// app.js is loaded with a cache-busting query on purpose. It changes several
+// times a day, is served by StaticFiles with no explicit Cache-Control, and a
+// browser that heuristically caches it shows a UI whose JS predates the fix it
+// is being told to look at — which cost Geoff two rounds of "it's still black"
+// on 2026-08-13 while the deployed code was correct. 120 KB uncached per load
+// is the right price for never debugging a stale bundle again.
+(function () {
+  // STAGE 22: the URL table (web/routes.js) — pure functions the router and
+  // every link builder in app.js / changes.js use. First, in order.
+  var rt = document.createElement('script');
+  rt.src = '/routes.js?v=' + Date.now();
+  rt.async = false;
+  document.body.appendChild(rt);
+  // STAGE 13: review threads (web/review.js) — self-contained like checks.js.
+  // Loaded BEFORE app.js and in order (async=false), because the proposal
+  // page asks `window.REVIEW_UI` the moment app.js routes.
+  var rv = document.createElement('script');
+  rv.src = '/review.js?v=' + Date.now();
+  rv.async = false;
+  document.body.appendChild(rv);
+  // STAGE 14: changes + release sets (web/changes.js) — same pattern, same
+  // reason: the router asks `window.CHANGES_UI` the moment app.js routes.
+  // §2.9: the DIFF-FORM registry (web/diffwidgets.js) — every changed file on
+  // the change page, the compare page and the proposal page draws through it.
+  var dw = document.createElement('script');
+  dw.src = '/diffwidgets.js?v=' + Date.now();
+  dw.async = false;
+  document.body.appendChild(dw);
+  var ch = document.createElement('script');
+  ch.src = '/changes.js?v=' + Date.now();
+  ch.async = false;
+  document.body.appendChild(ch);
+  var s = document.createElement('script');
+  s.src = '/app.js?v=' + Date.now();
+  s.async = false;
+  document.body.appendChild(s);
+  // STAGE 6 HOOK: checks (PLM_REVIEW_MODEL §2.6). Self-contained — its own CSS,
+  // one `window.CHECKS` global, and two one-line mount calls in app.js.
+  var c = document.createElement('script');
+  c.src = '/checks.js?v=' + Date.now();
+  document.body.appendChild(c);
+  var f = document.createElement('script');       // the flat pattern viewer
+  f.src = '/flat.js?v=' + Date.now();
+  document.body.appendChild(f);
+})();
+</script>
+</body>
+</html>

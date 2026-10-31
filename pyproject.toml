@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plm"
+version = "0.1.0"
+description = "A part registry for physical things: every item a git repo, push = proposal, OpenSCAD checks, web UI, HTTP API and MCP."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "httpx>=0.27",
+    "pydantic>=2.0",
+    "python-multipart>=0.0.9",
+    "fastmcp>=2.14.0",
+    # the physical-diff check composites its tiles (plm/checks.py, §2.10)
+    "pillow>=11.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["plm*", "plm_mcp*"]

@@ -1,0 +1,114 @@
+# plm-git — "git clone a part". A PROOF OF CONCEPT (see README.md).
+#
+# ⚠️ This is the LEGACY vault-projection proof of concept. The git-first git
+# door (every item a repo, push = proposal) runs from the repo-root
+# docker-compose.yml as the `plm-git` service, on the plm image — see DEPLOY.md.
+#
+# Up:    docker compose up -d --build
+# Logs:  docker compose logs -f plm-git
+# Clone: git clone http://<host>:8099/git/KML-PRT-1009.git
+#
+# Two invariants this file encodes:
+#   1. The vault is mounted READ-ONLY. plm-git is a reader; plm owns writes.
+#   2. The git object cache lives on local disk, never on the synced volume
+#      (the network sync corrupts dense directories like .git/objects).
+
+services:
+  plm-git:
+    build: .
+    image: plm-git:latest
+    container_name: plm-git
+    restart: unless-stopped
+    # Same uid as plm and as the human who owns the CAD repo, so the cache is
+    # readable/debuggable from the host shell.
+    user: "${PLMGIT_UID:-1000}:${PLMGIT_GID:-1000}"
+    environment:
+      PLMGIT_VAULT: /vault
+      PLMGIT_CACHE: /cache
+      PLMGIT_PORT: "8099"
+      PLMGIT_BIND: 0.0.0.0
+      # plm proper, for number -> folder resolution. Resolved by name on plm's
+      # own compose network (see `networks:` below) — plm-git is a plm satellite,
+      # not an independent stack, and this host's docker bridge address pool is
+      # already fully subnetted, so creating another network is not an option.
+      PLMGIT_PLM_URL: ${PLMGIT_PLM_URL:-http://plm:8097}
+      # Read-only fallback resolver: plm's own SQLite index.
+      PLMGIT_DB: /plm-db/plm.sqlite3
+      PLMGIT_FRESHNESS_TTL: ${PLMGIT_FRESHNESS_TTL:-30}
+      # Not implemented, and not a toggle you should trust — see README.
+      PLMGIT_ALLOW_PUSH: "0"
+      HOME: /tmp
+    volumes:
+      # THE VAULT, READ-ONLY. Every extraction runs against a mirror clone in
+      # /cache, so nothing here is ever opened for writing.
+      - ${PLMGIT_VAULT:-./data/vault}:/vault:ro
+      # Mirror clone + generated per-part bare repos. Local disk.
+      - ${PLMGIT_CACHE:-./data/cache}:/cache
+      # plm's SQLite index, read-only, only used when plm's API is unreachable.
+      - ${PLMGIT_DB_DIR:-./data/plm-db}:/plm-db:ro
+    ports:
+      # Private-network-only by nature: there is no vhost for this yet. See the
+      # integration section of README.md for the nginx /git/ route.
+      - "${PLMGIT_BIND:-0.0.0.0}:${PLMGIT_PORT:-8099}:8099"
+    networks:
+      - plm
+
+  # ------------------------------------------------------------------------
+  # plm-git-sandbox — the WRITE path, and the only place it is switched on.
+  #
+  # Same image, same code, three differences that matter:
+  #   1. its vault is the SANDBOX vault copy, and its plm is plm-sandbox (:8093,
+  #      no OIDC, scratch registry). A mistake here costs nothing.
+  #   2. PLMGIT_ALLOW_PUSH=1 — receive-pack is enabled, so `git push` becomes a
+  #      DRAFT revision proposal via plm's own check-in pipeline.
+  #   3. the code is bind-mounted over /app (like plm does it), so a change is a
+  #      restart, not a rebuild.
+  #
+  # The vault is STILL mounted read-only. That is not an oversight: plm-git never
+  # writes the vault even with push on — plm does, over HTTP. If this service
+  # ever needs write access to a vault, something has gone wrong in the design.
+  # ------------------------------------------------------------------------
+  plm-git-sandbox:
+    build: .
+    image: plm-git:latest
+    container_name: plm-git-sandbox
+    restart: unless-stopped
+    user: "${PLMGIT_UID:-1000}:${PLMGIT_GID:-1000}"
+    environment:
+      PLMGIT_VAULT: /vault
+      PLMGIT_CACHE: /cache
+      PLMGIT_PORT: "8099"
+      PLMGIT_BIND: 0.0.0.0
+      PLMGIT_PLM_URL: ${PLMGIT_SANDBOX_PLM_URL:-http://plm-sandbox:8097}
+      PLMGIT_DB: /plm-db/sandbox.sqlite3
+      PLMGIT_FRESHNESS_TTL: ${PLMGIT_FRESHNESS_TTL:-30}
+      # --- the write path ---
+      PLMGIT_ALLOW_PUSH: "1"
+      # Where DRAFT proposals are written. Sandbox, and the code refuses to
+      # target a non-sandbox plm unless PLMGIT_PUSH_ALLOW_PROD=1 as well.
+      PLMGIT_PUSH_PLM_URL: ${PLMGIT_SANDBOX_PLM_URL:-http://plm-sandbox:8097}
+      # The link a human clicks (the compose name is useless in a browser).
+      PLMGIT_PUSH_PLM_PUBLIC_URL: ${PLMGIT_SANDBOX_PUBLIC_URL:-http://localhost:8093}
+      # token=actor lines. Mounted as a file so the secret is not in
+      # `docker inspect`; see sample.env for how to make it.
+      PLMGIT_PUSH_TOKENS_FILE: /run/plm-git/tokens
+      HOME: /tmp
+    volumes:
+      # The SANDBOX vault, read-only. plm-sandbox owns writing to it.
+      - ${PLMGIT_SANDBOX_VAULT:-./data/sandbox/vault}:/vault:ro
+      - ${PLMGIT_SANDBOX_CACHE:-./data/sandbox/cache}:/cache
+      - ${PLMGIT_SANDBOX_DB_DIR:-./data/sandbox/db}:/plm-db:ro
+      # Code over /app: restart applies a change, no image rebuild (plm's pattern).
+      - ${PLMGIT_CODE_DIR:-.}/plm_git:/app/plm_git:ro
+      - ${PLMGIT_TOKENS_FILE:-./data/sandbox/tokens}:/run/plm-git/tokens:ro
+    ports:
+      - "${PLMGIT_BIND:-0.0.0.0}:${PLMGIT_SANDBOX_PORT:-8199}:8099"
+    networks:
+      - plm
+
+networks:
+  # plm's existing compose network, joined rather than created: it gives DNS for
+  # `plm` and avoids adding a 34th bridge subnet on a host that has run out.
+  plm:
+    external: true
+    name: ${PLMGIT_PLM_NETWORK:-plm_default}
